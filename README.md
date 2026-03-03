@@ -2,6 +2,9 @@
 
 Parrot помогает быстро превратить голос в текст прямо во время работы за компьютером.
 
+<img width="2048" height="2048" alt="lumigen-ujfmmc89h" src="https://github.com/user-attachments/assets/2d8e2d25-7053-4024-8a18-144045a6ce72" />
+
+
 # Что это
 
 Parrot работает в фоновом режиме и ждёт ваше сочетание клавиш.
