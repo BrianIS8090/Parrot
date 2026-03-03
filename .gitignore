@@ -1,0 +1,135 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+*.txt
+*.wav
+*.onnx.data
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+# Usually these files are written by a script, but they might be committed by
+# mistake.
+*.manifest
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.env
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+.poetry/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE settings
+.idea/
+.vscode/
+
+# Audio/test files (if large or you don't want to track them)
+# *.wav
+# *.mp3
+# test.txt # If it's an output file
+
+# ONNX models (if large and downloaded, consider Git LFS or not tracking)
+*.onnx
+
+.windsurf/skills/windows-ui-automation/SKILL.md
+.windsurf/skills/windows-ui-automation/references/threat-model.md
+.windsurf/skills/windows-ui-automation/references/security-examples.md
+.windsurf/skills/windows-ui-automation/references/advanced-patterns.md
+.windsurf/skills/pyqt6-ui-development-rules/templates/implementation-template.md
+.windsurf/skills/pyqt6-ui-development-rules/SKILL.md
+.windsurf/skills/pyqt6-ui-development-rules/scripts/main.cjs
+.windsurf/skills/pyqt6-ui-development-rules/schemas/output.schema.json
+.windsurf/skills/pyqt6-ui-development-rules/schemas/input.schema.json
+.windsurf/skills/pyqt6-ui-development-rules/rules/pyqt6-ui-development-rules.md
+.windsurf/skills/pyqt6-ui-development-rules/references/research-requirements.md
+.windsurf/skills/pyqt6-ui-development-rules/hooks/pre-execute.cjs
+.windsurf/skills/pyqt6-ui-development-rules/hooks/post-execute.cjs
+.windsurf/skills/pyqt6-ui-development-rules/commands/pyqt6-ui-development-rules.md
+.claude/skills/windows-ui-automation/SKILL.md
+.claude/skills/windows-ui-automation/references/threat-model.md
+.claude/skills/windows-ui-automation/references/security-examples.md
+.claude/skills/windows-ui-automation/references/advanced-patterns.md
+.claude/skills/pyqt6-ui-development-rules/templates/implementation-template.md
+.claude/skills/pyqt6-ui-development-rules/SKILL.md
+.claude/skills/pyqt6-ui-development-rules/scripts/main.cjs
+.claude/skills/pyqt6-ui-development-rules/schemas/output.schema.json
+.claude/skills/pyqt6-ui-development-rules/schemas/input.schema.json
+.claude/skills/pyqt6-ui-development-rules/rules/pyqt6-ui-development-rules.md
+.claude/skills/pyqt6-ui-development-rules/references/research-requirements.md
+.claude/skills/pyqt6-ui-development-rules/hooks/pre-execute.cjs
+.claude/skills/pyqt6-ui-development-rules/hooks/post-execute.cjs
+.claude/skills/pyqt6-ui-development-rules/commands/pyqt6-ui-development-rules.md
+.agents/skills/windows-ui-automation/SKILL.md
+.agents/skills/windows-ui-automation/references/threat-model.md
+.agents/skills/windows-ui-automation/references/security-examples.md
+.agents/skills/windows-ui-automation/references/advanced-patterns.md
+.agents/skills/pyqt6-ui-development-rules/templates/implementation-template.md
+.agents/skills/pyqt6-ui-development-rules/SKILL.md
+.agents/skills/pyqt6-ui-development-rules/scripts/main.cjs
+.agents/skills/pyqt6-ui-development-rules/schemas/output.schema.json
+.agents/skills/pyqt6-ui-development-rules/schemas/input.schema.json
+.agents/skills/pyqt6-ui-development-rules/rules/pyqt6-ui-development-rules.md
+.agents/skills/pyqt6-ui-development-rules/references/research-requirements.md
+.agents/skills/pyqt6-ui-development-rules/hooks/pre-execute.cjs
+.agents/skills/pyqt6-ui-development-rules/hooks/post-execute.cjs
+.agents/skills/pyqt6-ui-development-rules/commands/pyqt6-ui-development-rules.md
+AGENTS.md
+GEMINI.md

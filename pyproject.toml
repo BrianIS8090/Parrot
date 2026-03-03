@@ -1,0 +1,84 @@
+[project]
+name = "parrator"
+version = "0.1.0"
+description = "Speech to text using Parakeet ONNX models"
+authors = [
+    {name = "NullSense matas234@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "onnx-asr (>=0.6.0,<0.7.0)",
+    "onnxruntime-directml (>=1.22.0,<2.0.0)",
+    "soundfile (>=0.13.1,<0.14.0)",
+    "huggingface-hub (>=0.31.4,<0.32.0)",
+    "sounddevice (>=0.5.2,<0.6.0)",
+    "numpy (>=2.2.6,<3.0.0)",
+    "pyperclip (>=1.9.0,<2.0.0)",
+    "keyboard (>=0.13.5,<0.14.0)",
+    "webrtcvad-wheels (>=2.0.14,<3.0.0)",
+    "loguru (>=0.7.3,<0.8.0)",
+    "pyautogui (>=0.9.54,<1.0.0)",
+    "pystray (>=0.19.5,<0.20.0)",
+    "pynput (>=1.8.1,<2.0.0)",
+    "pymorphy3 (>=2.0.4,<3.0.0)",
+    "PyQt6 (>=6.10.0,<7.0.0)",
+    "PyQt6-WebEngine (>=6.10.0,<7.0.0)",
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.11.11"
+mypy = "^1.15.0"
+pre-commit = "^4.2.0"
+pyinstaller = "^6.13.0"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",  # Pycodestyle errors
+    "W",  # Pycodestyle warnings
+    "F",  # Pyflakes
+    "I",  # isort (import sorting)
+    "B",  # flake8-bugbear (potential bugs and design problems)
+    "C4", # flake8-comprehensions (more idiomatic comprehensions)
+    "A",  # flake8-builtins (shadowing builtins)
+    "SIM",# flake8-simplify
+]
+
+[tool.ruff.format]
+quote-style = "double"
+skip-magic-trailing-comma = true
+
+[tool.pyright] # basedpyright typically respects the pyright configuration section
+venvPath = "."   # Path to the directory *containing* the venv directory
+venv = ".venv"   # Name of the virtual environment directory

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "pyqt6-ui-development-rules": {
+      "source": "oimiragieo/agent-studio",
+      "sourceType": "github",
+      "computedHash": "fe96e7f7ec47008ea18e2fadc35302a8b1e2ee8e62801d8408352205874d0fee"
+    },
+    "windows-ui-automation": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "computedHash": "e3022ddc46af1108ad268e90ec82070bed763c1e0fa1f2e3921f801e62a99a01"
+    }
+  }
+}
