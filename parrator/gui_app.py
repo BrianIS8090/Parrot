@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+import json
 import ctypes
 from contextlib import suppress
 from datetime import datetime
@@ -12,40 +13,27 @@ from typing import Dict, Optional
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QComboBox, QCheckBox, QLineEdit, QTabWidget,
+    QLabel, QPushButton, QComboBox, QLineEdit, QStackedWidget,
     QGroupBox, QTreeWidget, QTreeWidgetItem, QTextEdit, QProgressBar, QMessageBox,
-    QHeaderView, QAbstractItemView, QSpacerItem, QSizePolicy
+    QHeaderView, QAbstractItemView
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QObject, QTimer, QSize
-from PyQt6.QtGui import QIcon, QFont, QColor
+from PyQt6.QtGui import QIcon, QFont, QColor, QPainter, QPen, QPixmap
 
 from huggingface_hub import snapshot_download
 
 from .audio_recorder import AudioRecorder
 from .config import Config
 from .hotkey_manager import HotkeyManager
+from .model_presets import (
+    MODEL_LABELS,
+    MODEL_LABEL_TO_NAME,
+    MODEL_NAME_TO_LABEL,
+    MODEL_ORDER,
+    MODEL_PRESETS,
+)
 from .transcriber import Transcriber
 from .wave_overlay import WaveOverlayController
-
-
-MODEL_PRESETS: Dict[str, Dict[str, str]] = {
-    "nemo-fastconformer-ru-rnnt": {
-        "label": "RU FastConformer (быстрый, русский)",
-        "repo_id": "istupakov/stt_ru_fastconformer_hybrid_large_pc_onnx",
-    },
-    "onnx-community/whisper-large-v3-turbo": {
-        "label": "Whisper Large V3 Turbo (RU+EN)",
-        "repo_id": "onnx-community/whisper-large-v3-turbo",
-    },
-}
-
-MODEL_ORDER = [
-    "nemo-fastconformer-ru-rnnt",
-    "onnx-community/whisper-large-v3-turbo",
-]
-MODEL_LABELS = [MODEL_PRESETS[m]["label"] for m in MODEL_ORDER]
-MODEL_LABEL_TO_NAME = {MODEL_PRESETS[m]["label"]: m for m in MODEL_ORDER}
-MODEL_NAME_TO_LABEL = {m: MODEL_PRESETS[m]["label"] for m in MODEL_ORDER}
 
 
 class WorkerSignals(QObject):
@@ -206,33 +194,89 @@ class ParratorGuiApp(QMainWindow):
         
         header_right = QVBoxLayout()
         header_right.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.btn_toggle_service = QPushButton("Включить диктовку")
+        self.btn_toggle_service.setObjectName("ToggleBtn")
+        self.btn_toggle_service.clicked.connect(self._toggle_service)
+        self.btn_toggle_service.setCursor(Qt.CursorShape.PointingHandCursor)
         self.lbl_model_status = QLabel("Статус модели: неизвестно")
         self.lbl_model_status.setObjectName("StatusLabel")
         self.lbl_service_status = QLabel("Сервис: остановлен")
         self.lbl_service_status.setObjectName("StatusLabel")
-        header_right.addWidget(self.lbl_model_status, alignment=Qt.AlignmentFlag.AlignRight)
-        header_right.addWidget(self.lbl_service_status, alignment=Qt.AlignmentFlag.AlignRight)
+        header_right.addWidget(self.btn_toggle_service, alignment=Qt.AlignmentFlag.AlignRight)
+        self.lbl_model_status.hide()
+        self.lbl_service_status.hide()
 
         header_layout.addLayout(header_left)
         header_layout.addStretch()
         header_layout.addLayout(header_right)
         self.main_layout.addLayout(header_layout)
 
-        # === Tabs ===
-        self.tabs = QTabWidget()
-        self.main_layout.addWidget(self.tabs, stretch=1)
+        # === Content with left navigation ===
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(16)
+        self.main_layout.addLayout(content_layout, stretch=1)
+
+        nav_container = QWidget()
+        nav_container.setObjectName("NavContainer")
+        nav_container.setFixedWidth(220)
+        nav_layout = QVBoxLayout(nav_container)
+        nav_layout.setContentsMargins(12, 12, 12, 12)
+        nav_layout.setSpacing(8)
+
+        nav_title = QLabel("Навигация")
+        nav_title.setObjectName("NavTitle")
+        nav_layout.addWidget(nav_title)
+
+        self.nav_buttons: Dict[str, QPushButton] = {}
+        self.btn_nav_control = QPushButton("Управление")
+        self.btn_nav_control.setObjectName("NavBtn")
+        self.btn_nav_control.setCheckable(True)
+        self.btn_nav_control.clicked.connect(lambda: self._switch_page("control"))
+        nav_layout.addWidget(self.btn_nav_control)
+        self.nav_buttons["control"] = self.btn_nav_control
+
+        self.btn_nav_dict = QPushButton("Словарь")
+        self.btn_nav_dict.setObjectName("NavBtn")
+        self.btn_nav_dict.setCheckable(True)
+        self.btn_nav_dict.clicked.connect(lambda: self._switch_page("dict"))
+        nav_layout.addWidget(self.btn_nav_dict)
+        self.nav_buttons["dict"] = self.btn_nav_dict
+
+        self.btn_nav_journal = QPushButton("Журнал")
+        self.btn_nav_journal.setObjectName("NavBtn")
+        self.btn_nav_journal.setCheckable(True)
+        self.btn_nav_journal.clicked.connect(lambda: self._switch_page("journal"))
+        nav_layout.addWidget(self.btn_nav_journal)
+        self.nav_buttons["journal"] = self.btn_nav_journal
+        nav_layout.addStretch()
+
+        nav_hint = QLabel("Клик по разделу переключает рабочую область справа.")
+        nav_hint.setWordWrap(True)
+        nav_hint.setObjectName("SectionHint")
+        nav_layout.addWidget(nav_hint)
+
+        content_layout.addWidget(nav_container, stretch=0)
+
+        self.pages_stack = QStackedWidget()
+        content_layout.addWidget(self.pages_stack, stretch=1)
 
         self.tab_control = QWidget()
         self.tab_dict = QWidget()
         self.tab_journal = QWidget()
+        self.pages_stack.addWidget(self.tab_control)
+        self.pages_stack.addWidget(self.tab_dict)
+        self.pages_stack.addWidget(self.tab_journal)
 
-        self.tabs.addTab(self.tab_control, "Управление")
-        self.tabs.addTab(self.tab_dict, "Словарь")
-        self.tabs.addTab(self.tab_journal, "Журнал")
+        self.page_indexes = {
+            "control": self.pages_stack.indexOf(self.tab_control),
+            "dict": self.pages_stack.indexOf(self.tab_dict),
+            "journal": self.pages_stack.indexOf(self.tab_journal),
+        }
 
         self._build_control_tab()
         self._build_dict_tab()
         self._build_journal_tab()
+        self._switch_page("control")
 
         # === Footer ===
         footer_layout = QHBoxLayout()
@@ -250,84 +294,131 @@ class ParratorGuiApp(QMainWindow):
         self.main_layout.addLayout(footer_layout)
 
     def _build_control_tab(self):
-        layout = QVBoxLayout(self.tab_control)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(20)
+        root_layout = QHBoxLayout(self.tab_control)
+        root_layout.setContentsMargins(16, 16, 16, 16)
+        root_layout.setSpacing(16)
+
+        left_container = QWidget()
+        left_layout = QVBoxLayout(left_container)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(12)
+        root_layout.addWidget(left_container, stretch=1)
 
         # Управление моделью
         group_model = QGroupBox("Управление моделью")
         gm_layout = QVBoxLayout(group_model)
-        
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Профиль модели:"))
+        gm_layout.setSpacing(8)
+
+        lbl_model_profile = QLabel("Профиль модели")
+        lbl_model_profile.setObjectName("FieldLabel")
+        gm_layout.addWidget(lbl_model_profile)
+
         self.combo_model = QComboBox()
         self.combo_model.addItems(MODEL_LABELS)
         self.combo_model.currentTextChanged.connect(self._on_model_selected)
-        row1.addWidget(self.combo_model, stretch=1)
-        
+        gm_layout.addWidget(self.combo_model)
+
+        row_model_actions = QHBoxLayout()
         self.btn_check_cache = QPushButton("Проверить кэш")
         self.btn_check_cache.setObjectName("SecondaryBtn")
         self.btn_check_cache.clicked.connect(self.check_model_status)
-        
+
         self.btn_save_model = QPushButton("Сохранить")
-        self.btn_save_model.setObjectName("SecondaryBtn")
+        self.btn_save_model.setObjectName("DarkBtn")
         self.btn_save_model.clicked.connect(self.save_model_settings)
-        
-        row1.addWidget(self.btn_check_cache)
-        row1.addWidget(self.btn_save_model)
-        
+
+        row_model_actions.addWidget(self.btn_check_cache)
+        row_model_actions.addWidget(self.btn_save_model)
+        row_model_actions.addStretch()
+        gm_layout.addLayout(row_model_actions)
+
         hint = QLabel("Рекомендуется загрузить модель заранее, чтобы запись запускалась без задержек.")
         hint.setObjectName("SectionHint")
-        
-        gm_layout.addLayout(row1)
         gm_layout.addWidget(hint)
-        layout.addWidget(group_model)
+        left_layout.addWidget(group_model)
 
         # Параметры сервиса
         group_service = QGroupBox("Параметры сервиса")
         gs_layout = QVBoxLayout(group_service)
-        
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Горячая клавиша:"))
+        gs_layout.setSpacing(8)
+
+        lbl_input = QLabel("Параметры ввода")
+        lbl_input.setObjectName("FieldLabel")
+        gs_layout.addWidget(lbl_input)
+
+        lbl_hotkey = QLabel("Горячая клавиша")
+        lbl_hotkey.setObjectName("FieldLabel")
+        gs_layout.addWidget(lbl_hotkey)
         self.entry_hotkey = QLineEdit()
-        row2.addWidget(self.entry_hotkey, stretch=1)
-        
-        row2.addSpacing(20)
-        row2.addWidget(QLabel("Режим вывода:"))
+        self.entry_hotkey.setPlaceholderText("Например: ctrl+shift+;")
+        gs_layout.addWidget(self.entry_hotkey)
+
+        lbl_output = QLabel("Режим ввода")
+        lbl_output.setObjectName("FieldLabel")
+        gs_layout.addWidget(lbl_output)
         self.combo_output = QComboBox()
         self.combo_output.addItems(["paste", "type"])
-        row2.addWidget(self.combo_output)
-        
-        self.check_autopaste = QCheckBox("Автовставка (для режима paste)")
-        
-        row3 = QHBoxLayout()
-        self.btn_start = QPushButton("Включить диктовку")
-        self.btn_start.setObjectName("AccentBtn")
-        self.btn_start.clicked.connect(self.start_service)
-        
-        self.btn_stop = QPushButton("Остановить сервис")
-        self.btn_stop.setObjectName("SecondaryBtn")
-        self.btn_stop.clicked.connect(self.stop_service)
-        
+        gs_layout.addWidget(self.combo_output)
+
+        lbl_autopaste = QLabel("Автовставка")
+        lbl_autopaste.setObjectName("FieldLabel")
+        gs_layout.addWidget(lbl_autopaste)
+        self.combo_autopaste = QComboBox()
+        self.combo_autopaste.addItems(["Включена", "Выключена"])
+        gs_layout.addWidget(self.combo_autopaste)
+
+        row_runtime_actions = QHBoxLayout()
         self.btn_save_runtime = QPushButton("Сохранить настройки")
         self.btn_save_runtime.setObjectName("SecondaryBtn")
         self.btn_save_runtime.clicked.connect(self.save_runtime_settings)
-        
+
         self.btn_open_config = QPushButton("Открыть config.json")
         self.btn_open_config.setObjectName("SecondaryBtn")
         self.btn_open_config.clicked.connect(self._open_config_file)
-        
-        row3.addWidget(self.btn_start)
-        row3.addWidget(self.btn_stop)
-        row3.addWidget(self.btn_save_runtime)
-        row3.addWidget(self.btn_open_config)
-        row3.addStretch()
 
-        gs_layout.addLayout(row2)
-        gs_layout.addWidget(self.check_autopaste)
-        gs_layout.addLayout(row3)
-        layout.addWidget(group_service)
-        layout.addStretch()
+        row_runtime_actions.addWidget(self.btn_save_runtime)
+        row_runtime_actions.addWidget(self.btn_open_config)
+        row_runtime_actions.addStretch()
+        gs_layout.addLayout(row_runtime_actions)
+        left_layout.addWidget(group_service)
+        left_layout.addStretch()
+
+        # Правая панель текущего состояния
+        live_panel = QWidget()
+        live_panel.setObjectName("LivePanel")
+        live_panel.setMinimumWidth(250)
+        live_panel.setMaximumWidth(320)
+        live_layout = QVBoxLayout(live_panel)
+        live_layout.setContentsMargins(14, 14, 14, 14)
+        live_layout.setSpacing(8)
+
+        live_title = QLabel("Состояние сессии")
+        live_title.setObjectName("LiveTitle")
+        live_layout.addWidget(live_title)
+
+        self.lbl_live_service = QLabel("• Сервис: в ожидании")
+        self.lbl_live_service.setObjectName("LiveInfo")
+        live_layout.addWidget(self.lbl_live_service)
+
+        self.lbl_live_mic = QLabel("• Микрофон: готов")
+        self.lbl_live_mic.setObjectName("LiveInfo")
+        live_layout.addWidget(self.lbl_live_mic)
+
+        self.lbl_live_last = QLabel("• Последняя фраза: —")
+        self.lbl_live_last.setObjectName("LiveInfo")
+        self.lbl_live_last.setWordWrap(True)
+        live_layout.addWidget(self.lbl_live_last)
+
+        live_activity_title = QLabel("Activity")
+        live_activity_title.setObjectName("LiveTitle")
+        live_layout.addWidget(live_activity_title)
+
+        self.txt_live_log = QTextEdit()
+        self.txt_live_log.setReadOnly(True)
+        self.txt_live_log.setObjectName("LiveLog")
+        live_layout.addWidget(self.txt_live_log, stretch=1)
+
+        root_layout.addWidget(live_panel, stretch=0)
 
     def _build_dict_tab(self):
         layout = QVBoxLayout(self.tab_dict)
@@ -344,7 +435,7 @@ class ParratorGuiApp(QMainWindow):
         self.entry_dict_target = QLineEdit()
         self.entry_dict_target.setPlaceholderText("На что заменить")
         self.btn_dict_add = QPushButton("Добавить")
-        self.btn_dict_add.setObjectName("SecondaryBtn")
+        self.btn_dict_add.setObjectName("DarkBtn")
         self.btn_dict_add.clicked.connect(self._add_or_update_dictionary_rule)
         
         row_input.addWidget(self.entry_dict_source, stretch=1)
@@ -416,122 +507,183 @@ class ParratorGuiApp(QMainWindow):
         # Modern Fluent-like QSS
         qss = """
         QMainWindow, QWidget#CentralWidget {
-            background-color: transparent;
+            background-color: #eef3f8;
         }
         QWidget {
             font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
             font-size: 10pt;
-            color: #1f2937;
+            color: #1f2b3d;
         }
         QLabel#HeaderTitle {
             font-size: 24pt;
-            font-weight: bold;
+            font-weight: 700;
             color: #0f172a;
         }
         QLabel#HeaderSub, QLabel#SectionHint, QLabel#ActivityLabel {
             font-size: 10pt;
-            color: #475569;
+            color: #64748b;
         }
-        QLabel#StatusLabel {
-            font-weight: bold;
+        QLabel#FieldLabel {
+            font-size: 9pt;
+            font-weight: 600;
             color: #334155;
         }
-        QTabWidget::pane {
-            border: 1px solid rgba(255, 255, 255, 0.4);
+        QLabel#StatusLabel {
+            font-weight: 700;
+            color: #334155;
+        }
+        QWidget#NavContainer {
+            border: 1px solid #dbe5ef;
+            border-radius: 10px;
+            background-color: #f7fafe;
+        }
+        QLabel#NavTitle {
+            font-size: 11pt;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        QPushButton#NavBtn {
             border-radius: 8px;
-            background-color: rgba(255, 255, 255, 0.65);
+            padding: 10px 12px;
+            text-align: left;
+            background-color: #e7edf5;
+            border: none;
+            color: #334155;
+            font-weight: 600;
         }
-        QTabBar::tab {
-            background-color: transparent;
-            padding: 8px 24px;
-            font-weight: bold;
-            border-bottom: 2px solid transparent;
+        QPushButton#NavBtn:hover {
+            background-color: #dbe8f4;
         }
-        QTabBar::tab:selected {
-            color: #0284c7;
-            border-bottom: 2px solid #0284c7;
-        }
-        QTabBar::tab:hover {
-            background-color: rgba(255, 255, 255, 0.5);
-            border-top-left-radius: 6px;
-            border-top-right-radius: 6px;
+        QPushButton#NavBtn:checked {
+            background-color: #1188c9;
+            color: #ffffff;
         }
         QGroupBox {
-            font-weight: bold;
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            border-radius: 8px;
+            font-weight: 700;
+            border: 1px solid #dde6f0;
+            border-radius: 10px;
             margin-top: 14px;
-            background-color: rgba(255, 255, 255, 0.4);
+            background-color: #f8fbff;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
             subcontrol-position: top left;
-            padding: 0 5px;
+            padding: 0 6px;
             color: #0f172a;
         }
         QLineEdit, QComboBox, QTextEdit, QTreeWidget {
-            border: 1px solid rgba(0, 0, 0, 0.1);
+            border: 1px solid #c8d3df;
             border-radius: 6px;
             padding: 6px;
-            background-color: rgba(255, 255, 255, 0.8);
+            background-color: #f5f8fc;
         }
         QLineEdit:focus, QComboBox:focus, QTextEdit:focus, QTreeWidget:focus {
-            border: 1px solid #0284c7;
+            border: 1px solid #1188c9;
             background-color: #ffffff;
         }
         QTextEdit#LogConsole {
             font-family: Consolas, monospace;
             font-size: 9pt;
+            background-color: #0d1737;
+            color: #dbeafe;
+            border: 1px solid #0d1737;
         }
         QPushButton {
-            border-radius: 6px;
+            border-radius: 8px;
             padding: 8px 16px;
             font-weight: 600;
         }
         QPushButton#AccentBtn {
-            background-color: #0284c7;
-            color: white;
+            background-color: #1188c9;
+            color: #ffffff;
             border: none;
         }
         QPushButton#AccentBtn:hover {
-            background-color: #0369a1;
+            background-color: #0f7cb7;
         }
         QPushButton#AccentBtn:pressed {
-            background-color: #075985;
+            background-color: #0c6ea4;
         }
         QPushButton#AccentBtn:disabled {
-            background-color: rgba(2, 132, 199, 0.5);
+            background-color: rgba(17, 136, 201, 0.45);
+        }
+        QPushButton#DarkBtn {
+            background-color: #0f1b3a;
+            color: #ffffff;
+            border: none;
+        }
+        QPushButton#DarkBtn:hover {
+            background-color: #12234a;
+        }
+        QPushButton#DarkBtn:pressed {
+            background-color: #0b1630;
+        }
+        QPushButton#ToggleBtn {
+            border-radius: 8px;
+            padding: 8px 14px;
+            color: #ffffff;
+            border: none;
+            font-weight: 700;
+            background-color: #1188c9;
+        }
+        QPushButton#ToggleBtn[active='true'] {
+            background-color: #dc2626;
+        }
+        QPushButton#ToggleBtn[active='false'] {
+            background-color: #1188c9;
+        }
+        QPushButton#ToggleBtn:disabled {
+            background-color: rgba(17, 136, 201, 0.45);
+        }
+        QWidget#LivePanel {
+            background-color: #0d1737;
+            border-radius: 10px;
+        }
+        QLabel#LiveTitle {
+            color: #f8fafc;
+            font-size: 10pt;
+            font-weight: 700;
+        }
+        QLabel#LiveInfo {
+            color: #dbeafe;
+            font-size: 9pt;
+        }
+        QTextEdit#LiveLog {
+            border: none;
+            background-color: transparent;
+            color: #dbeafe;
+            font-family: Consolas, monospace;
+            font-size: 9pt;
         }
         QPushButton#SecondaryBtn {
-            background-color: rgba(255, 255, 255, 0.7);
-            border: 1px solid rgba(0, 0, 0, 0.1);
+            background-color: #dfe7f1;
+            border: none;
             color: #334155;
         }
         QPushButton#SecondaryBtn:hover {
-            background-color: rgba(255, 255, 255, 1.0);
-            border: 1px solid rgba(0, 0, 0, 0.2);
+            background-color: #d4deea;
         }
         QPushButton#SecondaryBtn:pressed {
-            background-color: rgba(0, 0, 0, 0.05);
+            background-color: #cad6e5;
         }
         QPushButton#SecondaryBtn:disabled {
-            color: rgba(51, 65, 85, 0.4);
+            color: rgba(51, 65, 85, 0.45);
         }
         QHeaderView::section {
-            background-color: rgba(255, 255, 255, 0.5);
+            background-color: #ecf2f9;
             padding: 4px;
             border: none;
-            border-right: 1px solid rgba(0,0,0,0.05);
-            font-weight: bold;
+            border-right: 1px solid #d8e1ec;
+            font-weight: 700;
         }
         QProgressBar {
-            border: 1px solid rgba(0, 0, 0, 0.1);
+            border: 1px solid #ced8e4;
             border-radius: 4px;
-            background-color: rgba(255, 255, 255, 0.5);
+            background-color: #f3f7fc;
             text-align: center;
         }
         QProgressBar::chunk {
-            background-color: #0284c7;
+            background-color: #1188c9;
             border-radius: 4px;
         }
         """
@@ -556,7 +708,9 @@ class ParratorGuiApp(QMainWindow):
         idx = self.combo_output.findText(out_mode)
         if idx >= 0:
             self.combo_output.setCurrentIndex(idx)
-        self.check_autopaste.setChecked(bool(self.config.get("auto_paste", True)))
+        self.combo_autopaste.setCurrentText(
+            "Включена" if bool(self.config.get("auto_paste", True)) else "Выключена"
+        )
 
         self._init_dictionary_settings()
         self.check_model_status()
@@ -659,17 +813,31 @@ class ParratorGuiApp(QMainWindow):
     def _append_log(self, message: str):
         ts = datetime.now().strftime("%H:%M:%S")
         self.txt_log.append(f"[{ts}] {message}")
+        self.txt_live_log.append(f"{ts}  {message}")
         status = message if len(message) <= 90 else f"{message[:87]}..."
         self.lbl_activity.setText(status)
 
     @pyqtSlot(str)
     def _set_model_status_ui(self, text: str):
         self.lbl_model_status.setText(text)
+        self.lbl_model_status.setStyleSheet("color: #1188c9; font-weight: 700;")
         self._update_controls_ui()
 
     @pyqtSlot(str)
     def _set_service_status_ui(self, text: str):
         self.lbl_service_status.setText(text)
+        lower = text.lower()
+        if "запущ" in lower:
+            color = "#16a34a"
+        elif "останов" in lower:
+            color = "#b45309"
+        elif "ошибка" in lower:
+            color = "#dc2626"
+        else:
+            color = "#334155"
+        self.lbl_service_status.setStyleSheet(f"color: {color}; font-weight: 700;")
+        service_text = text.split(":", 1)[1].strip() if ":" in text else text.strip()
+        self.lbl_live_service.setText(f"• Сервис: {service_text}")
         self._update_controls_ui()
 
     @pyqtSlot(bool, str)
@@ -680,20 +848,82 @@ class ParratorGuiApp(QMainWindow):
             self.progress_bar.hide()
         if status_text:
             self.lbl_activity.setText(status_text)
+            if "Запись" in status_text:
+                self.lbl_live_mic.setText("• Микрофон: запись...")
+            elif "Распознавание" in status_text:
+                self.lbl_live_mic.setText("• Микрофон: обработка...")
         elif not is_busy:
             self.lbl_activity.setText("Готово")
+            self.lbl_live_mic.setText("• Микрофон: готов")
         self._update_controls_ui()
 
     @pyqtSlot(str)
     def _set_result_text_ui(self, text: str):
         self.txt_result.setPlainText(text)
+        compact = " ".join(text.split())
+        if len(compact) > 64:
+            compact = f"{compact[:61]}..."
+        self.lbl_live_last.setText(f"• Последняя фраза: «{compact}»" if compact else "• Последняя фраза: —")
 
     @pyqtSlot()
     def _update_controls_ui(self):
         in_bg = self.is_processing or self.model_loading
-        self.btn_start.setEnabled(not self.service_running and not in_bg)
-        self.btn_stop.setEnabled(self.service_running)
+        self.btn_toggle_service.setEnabled(not in_bg)
         self.combo_model.setEnabled(not self.service_running and not self.model_loading)
+        self._refresh_toggle_button()
+
+    def _switch_page(self, page_key: str):
+        idx = self.page_indexes.get(page_key)
+        if idx is None:
+            return
+        self.pages_stack.setCurrentIndex(idx)
+        for key, btn in self.nav_buttons.items():
+            btn.setChecked(key == page_key)
+
+    def _toggle_service(self):
+        if self.service_running:
+            self.stop_service()
+            return
+        self.start_service()
+
+    def _build_mic_icon(self) -> QIcon:
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(QColor("#FFFFFF"))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(5, 2, 6, 8, 3, 3)
+        painter.drawLine(8, 10, 8, 13)
+        painter.drawLine(5, 14, 11, 14)
+        painter.drawArc(3, 7, 10, 8, 180 * 16, -180 * 16)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _build_stop_icon(self) -> QIcon:
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#FFFFFF"))
+        painter.drawRoundedRect(4, 4, 8, 8, 2, 2)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _refresh_toggle_button(self):
+        if self.service_running:
+            self.btn_toggle_service.setText("Остановить диктовку")
+            self.btn_toggle_service.setIcon(self._build_stop_icon())
+            self.btn_toggle_service.setProperty("active", "true")
+        else:
+            self.btn_toggle_service.setText("Включить диктовку")
+            self.btn_toggle_service.setIcon(self._build_mic_icon())
+            self.btn_toggle_service.setProperty("active", "false")
+        self.btn_toggle_service.style().unpolish(self.btn_toggle_service)
+        self.btn_toggle_service.style().polish(self.btn_toggle_service)
 
     def _open_config_file(self):
         path = self.config.config_path
@@ -732,7 +962,7 @@ class ParratorGuiApp(QMainWindow):
     def save_runtime_settings(self):
         self.config.set("hotkey", self.entry_hotkey.text().strip() or "ctrl+shift+;")
         self.config.set("output_mode", self.combo_output.currentText().strip() or "paste")
-        self.config.set("auto_paste", self.check_autopaste.isChecked())
+        self.config.set("auto_paste", self.combo_autopaste.currentText() == "Включена")
         if not self.save_dictionary_settings(show_message=False):
             self.log("Настройки словаря не сохранены")
             return False
@@ -789,7 +1019,11 @@ class ParratorGuiApp(QMainWindow):
                 self.signals.log_msg.emit("Модель готова к работе")
             else:
                 self.signals.model_status_changed.emit("Статус модели: ошибка загрузки")
-                self.signals.log_msg.emit("Ошибка загрузки модели")
+                details = str(getattr(self.transcriber, "last_error", "")).strip()
+                if details:
+                    self.signals.log_msg.emit(f"Ошибка загрузки модели: {details}")
+                else:
+                    self.signals.log_msg.emit("Ошибка загрузки модели")
             if auto_start:
                 self.signals.model_loaded_result.emit(ok)
                 

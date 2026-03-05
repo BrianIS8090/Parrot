@@ -19,11 +19,11 @@
 
 ## Доступные модели распознавания
 
-- `nemo-parakeet-tdt-0.6b-v2` (по умолчанию)
-- `nvidia/parakeet-tdt-0.6b-v2`
-- `openai/whisper-tiny`
-- `openai/whisper-base`
-- `openai/whisper-small`
+- `nemo-fastconformer-ru-rnnt` (по умолчанию)
+- `onnx-community/whisper-large-v3-turbo`
+- `gigaam-v3-rnnt` (ONNX-экспорт GigaAM v3)
+
+Для профиля `gigaam-v3-rnnt` требуется `onnx-asr >= 0.8.0`.
 
 ## Конфигурация
 
@@ -32,7 +32,7 @@
 ```json
 {
   "hotkey": "ctrl+shift+;",
-  "model_name": "nemo-parakeet-tdt-0.6b-v2",
+  "model_name": "nemo-fastconformer-ru-rnnt",
   "auto_paste": true,
   "auto_start_with_system": false
 }

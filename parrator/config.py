@@ -6,6 +6,8 @@ import json
 import os
 from typing import Any, Dict
 
+from .model_presets import DEFAULT_MODEL_NAME
+
 
 class Config:
     """Simple configuration manager."""
@@ -14,7 +16,7 @@ class Config:
         self.config_path = self._get_config_path()
         self.defaults = {
             "hotkey": "ctrl+shift+;",
-            "model_name": "nemo-parakeet-tdt-0.6b-v2",
+            "model_name": DEFAULT_MODEL_NAME,
             "model_path": "",
             "auto_paste": True,
             "output_mode": "paste",

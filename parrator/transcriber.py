@@ -3,12 +3,18 @@ Simplified transcription service using ONNX models.
 """
 
 import os
+import re
+from importlib import metadata
 from typing import Callable, Optional, Tuple
 
 import onnxruntime as ort
 from onnx_asr import load_model
 
 from .config import Config
+from .model_presets import (
+    DEFAULT_MODEL_NAME,
+    MODEL_MIN_ONNX_ASR_VERSION,
+)
 from .text_postprocessor import TextPostProcessor
 
 
@@ -19,6 +25,7 @@ class Transcriber:
         self.config = config
         self.model = None
         self.model_name = None
+        self.last_error = ""
         self.logger = logger
         self.text_postprocessor = TextPostProcessor(config, logger=self._log)
 
@@ -34,30 +41,70 @@ class Transcriber:
     def load_model(self) -> bool:
         """Load the transcription model."""
         try:
+            self.last_error = ""
             model_name = self.config.get(
-                'model_name', 'nemo-parakeet-tdt-0.6b-v2')
+                "model_name", DEFAULT_MODEL_NAME
+            )
             model_path = str(self.config.get("model_path", "") or "").strip()
             if model_path and not os.path.isdir(model_path):
-                self._log(f"Model path does not exist: {model_path}")
+                self.last_error = f"Model path does not exist: {model_path}"
+                self._log(self.last_error)
+                return False
+
+            required_version = MODEL_MIN_ONNX_ASR_VERSION.get(str(model_name))
+            if (
+                required_version
+                and not self._is_onnx_asr_version_supported(required_version)
+            ):
+                self.last_error = (
+                    f"Модель '{model_name}' требует onnx-asr>={required_version}. "
+                    "Обновите зависимость и перезапустите приложение."
+                )
+                self._log(self.last_error)
                 return False
 
             # Get available ONNX providers
             providers = self._get_providers()
+            model_path = self._resolve_model_path(str(model_name), model_path)
 
             if model_path:
                 self._log(f"Loading model: {model_name} from {model_path}")
-                self.model = load_model(model_name, path=model_path, providers=providers)
+                self.model = load_model(
+                    model_name, path=model_path, providers=providers
+                )
             else:
                 self._log(f"Loading model: {model_name}")
                 self.model = load_model(model_name, providers=providers)
             self.model_name = model_name
+            self.last_error = ""
 
             self._log(f"Model '{model_name}' loaded successfully")
             return True
 
         except Exception as e:
-            self._log(f"Failed to load model: {e}")
+            self.last_error = f"Failed to load model: {e}"
+            self._log(self.last_error)
             return False
+
+    def _resolve_model_path(self, model_name: str, model_path: str) -> str:
+        if model_path:
+            return model_path
+
+        # Если явный путь не задан, onnx-asr сам скачает только нужные файлы модели.
+        return ""
+
+    def _is_onnx_asr_version_supported(self, required_version: str) -> bool:
+        try:
+            current_version = metadata.version("onnx-asr")
+        except metadata.PackageNotFoundError:
+            return False
+        current = self._version_to_tuple(current_version)
+        required = self._version_to_tuple(required_version)
+        return current >= required
+
+    @staticmethod
+    def _version_to_tuple(value: str) -> tuple[int, ...]:
+        return tuple(int(part) for part in re.findall(r"\d+", value))
 
     def transcribe_file(self, audio_path: str) -> Tuple[bool, Optional[str]]:
         """Transcribe an audio file."""
