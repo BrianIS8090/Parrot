@@ -164,6 +164,32 @@ class ParratorGuiApp(QMainWindow):
         header_layout = QHBoxLayout()
         header_left = QVBoxLayout()
         title_layout = QHBoxLayout()
+        logo = QLabel()
+        logo.setObjectName("HeaderLogo")
+        logo.setFixedSize(28, 28)
+        logo_paths = [
+            r"C:\Users\Brian\Downloads\Parrot\assets\lumigen-wprf3azgo.jpg",
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "assets",
+                "lumigen-wprf3azgo.jpg",
+            ),
+        ]
+        for logo_path in logo_paths:
+            if os.path.exists(logo_path):
+                logo_pixmap = QPixmap(logo_path)
+                if not logo_pixmap.isNull():
+                    logo.setPixmap(
+                        logo_pixmap.scaled(
+                            28,
+                            28,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
+                    title_layout.addWidget(logo)
+                    break
+
         title = QLabel("Parrot")
         title.setObjectName("HeaderTitle")
         
@@ -171,7 +197,6 @@ class ParratorGuiApp(QMainWindow):
         version = "v0.1.0"
         try:
             import tomli
-            import os
             pyproject_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "pyproject.toml")
             with open(pyproject_path, "rb") as f:
                 pyproject = tomli.load(f)
@@ -228,7 +253,7 @@ class ParratorGuiApp(QMainWindow):
         nav_layout.addWidget(nav_title)
 
         self.nav_buttons: Dict[str, QPushButton] = {}
-        self.btn_nav_control = QPushButton("Управление")
+        self.btn_nav_control = QPushButton("Управление моделью")
         self.btn_nav_control.setObjectName("NavBtn")
         self.btn_nav_control.setCheckable(True)
         self.btn_nav_control.clicked.connect(lambda: self._switch_page("control"))
@@ -242,7 +267,7 @@ class ParratorGuiApp(QMainWindow):
         nav_layout.addWidget(self.btn_nav_dict)
         self.nav_buttons["dict"] = self.btn_nav_dict
 
-        self.btn_nav_journal = QPushButton("Журнал")
+        self.btn_nav_journal = QPushButton("Распознанный текст")
         self.btn_nav_journal.setObjectName("NavBtn")
         self.btn_nav_journal.setCheckable(True)
         self.btn_nav_journal.clicked.connect(lambda: self._switch_page("journal"))
@@ -467,7 +492,8 @@ class ParratorGuiApp(QMainWindow):
 
     def _build_journal_tab(self):
         layout = QVBoxLayout(self.tab_journal)
-        layout.setContentsMargins(16, 16, 16, 16)
+        # Поднимаем блоки чуть выше, чтобы нижний контейнер не упирался в границу.
+        layout.setContentsMargins(16, 16, 16, 24)
         layout.setSpacing(16)
 
         grp_result = QGroupBox("Распознанный текст")
@@ -562,14 +588,17 @@ class ParratorGuiApp(QMainWindow):
             font-weight: 700;
             border: 1px solid #dde6f0;
             border-radius: 10px;
-            margin-top: 14px;
+            margin-top: 18px;
             background-color: #f8fbff;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
             subcontrol-position: top left;
-            padding: 0 6px;
+            top: -4px;
+            left: 0px;
+            padding: 0 4px;
             color: #0f172a;
+            background-color: #eef3f8;
         }
         QLineEdit, QComboBox, QTextEdit, QTreeWidget {
             border: 1px solid #c8d3df;
@@ -886,32 +915,24 @@ class ParratorGuiApp(QMainWindow):
             return
         self.start_service()
 
-    def _build_mic_icon(self) -> QIcon:
-        pixmap = QPixmap(16, 16)
+    def _icon_from_svg(self, svg_content: str, size: int = 24) -> QIcon:
+        from PyQt6.QtSvg import QSvgRenderer
+        renderer = QSvgRenderer(svg_content.encode('utf-8'))
+        pixmap = QPixmap(size, size)
         pixmap.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        pen = QPen(QColor("#FFFFFF"))
-        pen.setWidth(2)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(5, 2, 6, 8, 3, 3)
-        painter.drawLine(8, 10, 8, 13)
-        painter.drawLine(5, 14, 11, 14)
-        painter.drawArc(3, 7, 10, 8, 180 * 16, -180 * 16)
+        renderer.render(painter)
         painter.end()
         return QIcon(pixmap)
 
+    def _build_mic_icon(self) -> QIcon:
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>'
+        return self._icon_from_svg(svg)
+
     def _build_stop_icon(self) -> QIcon:
-        pixmap = QPixmap(16, 16)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#FFFFFF"))
-        painter.drawRoundedRect(4, 4, 8, 8, 2, 2)
-        painter.end()
-        return QIcon(pixmap)
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>'
+        return self._icon_from_svg(svg)
 
     def _refresh_toggle_button(self):
         if self.service_running:

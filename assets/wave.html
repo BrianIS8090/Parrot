@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Анимация жидкой волны</title>
+  <title>Анимация записи</title>
   <style>
     body {
       display: flex;
@@ -11,63 +11,40 @@
       align-items: center;
       height: 100vh;
       margin: 0;
-      background-color: transparent; /* Полностью прозрачный фон страницы */
+      background-color: transparent;
       overflow: hidden;
     }
-
-    /* Круглый контейнер-маска для волны */
-    .loader-circle {
-      width: 60px; /* Уменьшено в 2 раза */
-      height: 60px; /* Уменьшено в 2 раза */
+    .eq-container {
+      width: 60px;
+      height: 60px;
       border-radius: 50%;
-      overflow: hidden;
-      background-color: transparent; /* Убрали темный фон круга */
-      position: relative;
-      border: 2px solid rgba(0, 123, 255, 0.5); /* Более тонкая и полупрозрачная рамка */
+      border: 2px solid rgba(0, 123, 255, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 4px;
     }
-
-    /* SVG растягивается на весь контейнер */
-    .loader-circle svg {
-      width: 100%;
-      height: 100%;
-      position: absolute;
-      bottom: 0;
-      left: 0;
+    .bar {
+      width: 6px;
+      height: 10px;
+      background-color: #007bff;
+      border-radius: 3px;
+      animation: bounce 1s infinite ease-in-out alternate;
+    }
+    .bar:nth-child(1) { animation-delay: 0.1s; }
+    .bar:nth-child(2) { animation-delay: 0.4s; animation-duration: 0.8s; }
+    .bar:nth-child(3) { animation-delay: 0.2s; animation-duration: 1.2s; }
+    @keyframes bounce {
+      0% { height: 10px; }
+      100% { height: 35px; }
     }
   </style>
 </head>
 <body>
-
-  <div class="loader-circle">
-    <!-- viewBox 0 0 100 100 позволяет легко считать координаты в процентах -->
-    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-      
-      <!-- Задняя волна (полупрозрачная, движется влево) -->
-      <path fill="rgba(0, 123, 255, 0.4)" 
-            d="M 0 50 Q 25 35, 50 50 T 100 50 T 150 50 T 200 50 V 100 H 0 Z">
-        <animateTransform 
-            attributeName="transform" 
-            type="translate" 
-            from="0 0" 
-            to="-100 0" 
-            dur="2.5s" 
-            repeatCount="indefinite" />
-      </path>
-      
-      <!-- Передняя волна (непрозрачная, движется вправо) -->
-      <path fill="#007bff" 
-            d="M 0 60 Q 25 75, 50 60 T 100 60 T 150 60 T 200 60 V 100 H 0 Z">
-        <animateTransform 
-            attributeName="transform" 
-            type="translate" 
-            from="-100 0" 
-            to="0 0" 
-            dur="2s" 
-            repeatCount="indefinite" />
-      </path>
-
-    </svg>
+  <div class="eq-container">
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
   </div>
-
 </body>
 </html>
