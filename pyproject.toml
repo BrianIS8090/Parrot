@@ -1,6 +1,6 @@
 [project]
 name = "parrator"
-version = "0.1.0"
+version = "0.2.0"
 description = "Speech to text using Parakeet ONNX models"
 authors = [
     {name = "NullSense matas234@gmail.com"}

@@ -285,27 +285,86 @@ class ParratorTrayApp:
     def _auto_paste(self):
         """Automatically paste from clipboard."""
         self._focus_target_window()
-
-        try:
-            from pynput.keyboard import Controller, Key
-            keyboard_controller = Controller()
-            time.sleep(0.12)
-            keyboard_controller.press(Key.ctrl)
-            keyboard_controller.press("v")
-            keyboard_controller.release("v")
-            keyboard_controller.release(Key.ctrl)
-            print("Auto-pasted")
-            return
-        except Exception as e:
-            print(f"Auto-paste via pynput failed: {e}")
+        time.sleep(0.12)
 
         try:
             import pyautogui
-            time.sleep(0.12)
             pyautogui.hotkey('ctrl', 'v')
             print("Auto-pasted")
+            return
         except Exception as e:
-            print(f"Auto-paste failed: {e}")
+            print(f"Auto-paste via pyautogui failed: {e}")
+
+        try:
+            import keyboard
+            time.sleep(0.12)
+            keyboard.send("ctrl+v")
+            print("Auto-pasted")
+            return
+        except Exception as e:
+            print(f"Auto-paste via keyboard failed: {e}")
+
+        if self._paste_via_window_message():
+            print("Auto-pasted")
+            return
+
+        print("Auto-paste did not work")
+
+    def _paste_via_window_message(self) -> bool:
+        """Paste into target window via WM_PASTE without key simulation."""
+        if sys.platform != "win32" or not self.target_window_handle:
+            return False
+
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = int(self.target_window_handle)
+            target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+            if not target_thread:
+                return False
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            class GUITHREADINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.c_uint),
+                    ("flags", ctypes.c_uint),
+                    ("hwndActive", ctypes.c_void_p),
+                    ("hwndFocus", ctypes.c_void_p),
+                    ("hwndCapture", ctypes.c_void_p),
+                    ("hwndMenuOwner", ctypes.c_void_p),
+                    ("hwndMoveSize", ctypes.c_void_p),
+                    ("hwndCaret", ctypes.c_void_p),
+                    ("rcCaret", RECT),
+                ]
+
+            info = GUITHREADINFO()
+            info.cbSize = ctypes.sizeof(info)
+            if not user32.GetGUIThreadInfo(target_thread, ctypes.byref(info)):
+                return False
+
+            focus_hwnd = int(info.hwndFocus) if info.hwndFocus else hwnd
+            WM_PASTE = 0x0302
+            SMTO_ABORTIFHUNG = 0x0002
+            result = ctypes.c_ulong(0)
+            ok = user32.SendMessageTimeoutW(
+                focus_hwnd,
+                WM_PASTE,
+                0,
+                0,
+                SMTO_ABORTIFHUNG,
+                150,
+                ctypes.byref(result),
+            )
+            return bool(ok)
+        except Exception as e:
+            print(f"WM_PASTE failed: {e}")
+            return False
 
     def _get_foreground_window_handle(self) -> Optional[int]:
         """Get current active window handle on Windows."""

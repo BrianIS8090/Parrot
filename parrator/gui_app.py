@@ -108,14 +108,27 @@ class ParratorGuiApp(QMainWindow):
             base_path = os.path.dirname(os.path.abspath(__file__))
         return os.path.join(base_path, relative_path)
 
+    def _resolve_window_icon_path(self) -> str:
+        icon_candidates = [
+            "resources/icon.ico",
+            "resources/icon.png",
+        ]
+        for relative_path in icon_candidates:
+            icon_path = self._resource_path(relative_path)
+            if os.path.exists(icon_path):
+                return icon_path
+        return ""
+
     def _init_window(self):
         self.setWindowTitle("Parrot")
         self.resize(1080, 760)
         self.setMinimumSize(980, 700)
 
-        icon_path = self._resource_path("resources/icon.png")
+        icon_path = self._resolve_window_icon_path()
         if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
+            app_icon = QIcon(icon_path)
+            self._app.setWindowIcon(app_icon)
+            self.setWindowIcon(app_icon)
 
         # Windows 11 Mica & Rounded Corners
         if sys.platform == "win32":
@@ -194,7 +207,7 @@ class ParratorGuiApp(QMainWindow):
         title.setObjectName("HeaderTitle")
         
         # Получаем версию из pyproject.toml если получится, или используем заглушку
-        version = "v0.1.0"
+        version = "v0.2.0"
         try:
             import tomli
             pyproject_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "pyproject.toml")
@@ -202,7 +215,7 @@ class ParratorGuiApp(QMainWindow):
                 pyproject = tomli.load(f)
                 version = f"v{pyproject['project']['version']}"
         except Exception:
-            pass # Fallback to v0.1.0
+            pass # Fallback to v0.2.0
 
         version_label = QLabel(version)
         version_label.setObjectName("VersionLabel")
@@ -383,6 +396,7 @@ class ParratorGuiApp(QMainWindow):
         gs_layout.addWidget(lbl_output)
         self.combo_output = QComboBox()
         self.combo_output.addItems(["paste", "type"])
+        self.combo_output.currentTextChanged.connect(self._update_output_mode_ui)
         gs_layout.addWidget(self.combo_output)
 
         lbl_autopaste = QLabel("Автовставка")
@@ -740,6 +754,7 @@ class ParratorGuiApp(QMainWindow):
         self.combo_autopaste.setCurrentText(
             "Включена" if bool(self.config.get("auto_paste", True)) else "Выключена"
         )
+        self._update_output_mode_ui()
 
         self._init_dictionary_settings()
         self.check_model_status()
@@ -899,7 +914,30 @@ class ParratorGuiApp(QMainWindow):
         in_bg = self.is_processing or self.model_loading
         self.btn_toggle_service.setEnabled(not in_bg)
         self.combo_model.setEnabled(not self.service_running and not self.model_loading)
+        runtime_locked = self.service_running
+        self.entry_hotkey.setEnabled(not runtime_locked)
+        self.combo_output.setEnabled(not runtime_locked)
+        self.btn_save_runtime.setEnabled(not runtime_locked)
+        self.btn_open_config.setEnabled(not runtime_locked)
+        self._update_output_mode_ui()
         self._refresh_toggle_button()
+
+    def _update_output_mode_ui(self):
+        mode = self.combo_output.currentText().strip().lower()
+        runtime_locked = self.service_running
+        is_paste_mode = mode == "paste" and not runtime_locked
+        self.combo_autopaste.setEnabled(is_paste_mode)
+        if is_paste_mode:
+            self.combo_autopaste.setToolTip("")
+            return
+        if runtime_locked:
+            self.combo_autopaste.setToolTip(
+                "Параметры ввода недоступны, пока диктовка запущена."
+            )
+            return
+        self.combo_autopaste.setToolTip(
+            "В режиме type текст печатается напрямую, автовставка не используется."
+        )
 
     def _switch_page(self, page_key: str):
         idx = self.page_indexes.get(page_key)
@@ -1232,26 +1270,84 @@ class ParratorGuiApp(QMainWindow):
 
     def _auto_paste(self):
         self._focus_target_window()
-        try:
-            from pynput.keyboard import Controller, Key
-            controller = Controller()
-            time.sleep(0.12)
-            controller.press(Key.ctrl)
-            controller.press("v")
-            controller.release("v")
-            controller.release(Key.ctrl)
-            self.signals.log_msg.emit("Текст вставлен")
-            return
-        except Exception as e:
-            self.signals.log_msg.emit(f"Вставка через pynput не сработала: {e}")
+        time.sleep(0.12)
 
         try:
             import pyautogui
-            time.sleep(0.12)
             pyautogui.hotkey("ctrl", "v")
             self.signals.log_msg.emit("Текст вставлен")
+            return
         except Exception as e:
-            self.signals.log_msg.emit(f"Ошибка вставки: {e}")
+            self.signals.log_msg.emit(f"Вставка через pyautogui не сработала: {e}")
+
+        try:
+            import keyboard
+            time.sleep(0.12)
+            keyboard.send("ctrl+v")
+            self.signals.log_msg.emit("Текст вставлен")
+            return
+        except Exception as e:
+            self.signals.log_msg.emit(f"Вставка через keyboard не сработала: {e}")
+
+        if self._paste_via_window_message():
+            self.signals.log_msg.emit("Текст вставлен")
+            return
+
+        self.signals.log_msg.emit("Автовставка не сработала")
+
+    def _paste_via_window_message(self) -> bool:
+        if os.name != "nt" or not self.target_window_handle:
+            return False
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = int(self.target_window_handle)
+            target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+            if not target_thread:
+                return False
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            class GUITHREADINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.c_uint),
+                    ("flags", ctypes.c_uint),
+                    ("hwndActive", ctypes.c_void_p),
+                    ("hwndFocus", ctypes.c_void_p),
+                    ("hwndCapture", ctypes.c_void_p),
+                    ("hwndMenuOwner", ctypes.c_void_p),
+                    ("hwndMoveSize", ctypes.c_void_p),
+                    ("hwndCaret", ctypes.c_void_p),
+                    ("rcCaret", RECT),
+                ]
+
+            info = GUITHREADINFO()
+            info.cbSize = ctypes.sizeof(info)
+            if not user32.GetGUIThreadInfo(target_thread, ctypes.byref(info)):
+                return False
+
+            focus_hwnd = int(info.hwndFocus) if info.hwndFocus else hwnd
+            WM_PASTE = 0x0302
+            SMTO_ABORTIFHUNG = 0x0002
+            result = ctypes.c_ulong(0)
+            ok = user32.SendMessageTimeoutW(
+                focus_hwnd,
+                WM_PASTE,
+                0,
+                0,
+                SMTO_ABORTIFHUNG,
+                150,
+                ctypes.byref(result),
+            )
+            return bool(ok)
+        except Exception as e:
+            self.signals.log_msg.emit(f"WM_PASTE не сработал: {e}")
+            return False
 
     def _get_foreground_window_handle(self) -> Optional[int]:
         if os.name != "nt":

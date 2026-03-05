@@ -1,5 +1,5 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-"%~dp0.venv\Scripts\python.exe" -m parrator --gui
+start "" /b "%~dp0.venv\Scripts\pythonw.exe" -m parrator --gui
 endlocal

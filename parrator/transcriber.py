@@ -36,7 +36,10 @@ class Transcriber:
                 return
             except Exception:
                 pass
-        print(message)
+        try:
+            print(message)
+        except Exception:
+            pass
 
     def load_model(self) -> bool:
         """Load the transcription model."""

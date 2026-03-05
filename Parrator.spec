@@ -41,11 +41,11 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='Parrator',
-    debug=True,
+    debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
+    console=False,
     onefile=True,
     icon='parrator/resources/icon.ico',
 )
