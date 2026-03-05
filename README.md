@@ -4,7 +4,7 @@ Parrot помогает быстро превратить голос в текс
 
 <img width="1024" height="1024" alt="lumigen-14db3ckpl" src="https://github.com/user-attachments/assets/89981172-1a50-448e-a93f-8c3144d10c07" />
 
-
+<img width="1134" height="1120" alt="Снимок экрана 2026-03-05 113934" src="https://github.com/user-attachments/assets/5ba94f6b-da99-4959-bb58-f170a7a335fb" />
 
 # Что это
 
