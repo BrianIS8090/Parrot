@@ -23,6 +23,7 @@ class Config:
             "auto_start_with_system": False,
             "dictionary": {},
             "dictionary_path": "",
+            "audio_device": "",
         }
         self.config = self._load_config()
 
