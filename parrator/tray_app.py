@@ -2,7 +2,6 @@
 Simplified tray application.
 """
 
-import ctypes
 import os
 import subprocess
 import sys
@@ -22,6 +21,11 @@ from .startup import StartupManager
 from .text_output import auto_paste_from_clipboard, paste_with_type_fallback
 from .transcriber import Transcriber
 from .wave_overlay import WaveOverlayController
+from .win_utils import (
+    focus_target_window,
+    get_foreground_window_handle,
+    paste_via_window_message,
+)
 
 
 class ParratorTrayApp:
@@ -54,7 +58,7 @@ class ParratorTrayApp:
         # Setup hotkeys
         self._setup_hotkeys()
 
-        hotkey = self.config.get('hotkey')
+        hotkey = self.config.get("hotkey")
         if self.hotkey_manager and self.hotkey_manager.is_hold_mode:
             print(f"Ready! Hold {hotkey} to record")
         else:
@@ -70,21 +74,19 @@ class ParratorTrayApp:
 
     def _load_model_async(self):
         """Load the transcription model in a background thread."""
+
         def load_model():
             if self.transcriber.load_model():
                 self.model_loaded = True
                 self._update_tray_icon()
                 print("Model loaded successfully")
                 self._show_runtime_status(
-                    "Parrator",
-                    "Модель загружена. Нажмите горячую клавишу для записи."
+                    "Parrator", "Модель загружена. Нажмите горячую клавишу для записи."
                 )
             else:
                 print("Failed to load model")
                 self._show_runtime_status(
-                    "Parrator",
-                    "Не удалось загрузить модель распознавания.",
-                    error=True
+                    "Parrator", "Не удалось загрузить модель распознавания.", error=True
                 )
 
         thread = threading.Thread(target=load_model, daemon=True)
@@ -99,7 +101,7 @@ class ParratorTrayApp:
         except Exception as e:
             print(f"Could not load icon: {e}")
             # Create simple fallback icon
-            image = Image.new('RGB', (64, 64), color='blue')
+            image = Image.new("RGB", (64, 64), color="blue")
 
         # Create menu
         menu = pystray.Menu(
@@ -109,26 +111,19 @@ class ParratorTrayApp:
             pystray.MenuItem(
                 "Start with System",
                 self._toggle_startup,
-                checked=lambda item: self.startup_manager.is_enabled()
+                checked=lambda item: self.startup_manager.is_enabled(),
             ),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Quit", self._quit_application)
+            pystray.MenuItem("Quit", self._quit_application),
         )
 
-        self.tray_icon = pystray.Icon(
-            "parrator",
-            image,
-            "Parrator - Loading...",
-            menu
-        )
+        self.tray_icon = pystray.Icon("parrator", image, "Parrator - Loading...", menu)
 
     def _setup_hotkeys(self):
         """Setup global hotkeys."""
-        hotkey_combo = self.config.get('hotkey', 'ctrl+shift+;')
+        hotkey_combo = self.config.get("hotkey", "ctrl+shift+;")
         self.hotkey_manager = HotkeyManager(
-            hotkey_combo,
-            self._on_hotkey_press,
-            self._on_hotkey_release
+            hotkey_combo, self._on_hotkey_press, self._on_hotkey_release
         )
 
         if not self.hotkey_manager.start():
@@ -182,9 +177,7 @@ class ParratorTrayApp:
             self.wave_overlay.hide()
             self._update_tray_icon()
             self._show_runtime_status(
-                "Parrator",
-                "Не удалось начать запись с микрофона.",
-                error=True
+                "Parrator", "Не удалось начать запись с микрофона.", error=True
             )
 
     def _stop_recording(self):
@@ -208,6 +201,7 @@ class ParratorTrayApp:
 
     def _process_audio_async(self, audio_data):
         """Process audio in background thread."""
+
         def process():
             try:
                 # Save temporary audio file
@@ -228,17 +222,13 @@ class ParratorTrayApp:
                 else:
                     print("Transcription failed")
                     self._show_runtime_status(
-                        "Parrator",
-                        "Распознавание не дало результата.",
-                        error=True
+                        "Parrator", "Распознавание не дало результата.", error=True
                     )
 
             except Exception as e:
                 print(f"Processing error: {e}")
                 self._show_runtime_status(
-                    "Parrator",
-                    f"Ошибка обработки: {e}",
-                    error=True
+                    "Parrator", f"Ошибка обработки: {e}", error=True
                 )
 
         thread = threading.Thread(target=process, daemon=True)
@@ -259,18 +249,18 @@ class ParratorTrayApp:
 
         try:
             import pyperclip
+
             pyperclip.copy(text)
             print("Copied to clipboard")
 
             # Auto-paste if enabled
-            if self.config.get('auto_paste', True):
-                if not paste_with_type_fallback(
-                    text,
-                    paste_text=self._auto_paste,
-                    type_text=self._type_direct,
-                    logger=print,
-                ):
-                    print("Could not insert text into target window")
+            if self.config.get("auto_paste", True) and not paste_with_type_fallback(
+                text,
+                paste_text=self._auto_paste,
+                type_text=self._type_direct,
+                logger=print,
+            ):
+                print("Could not insert text into target window")
 
         except Exception as e:
             print(f"Clipboard error: {e}")
@@ -278,8 +268,9 @@ class ParratorTrayApp:
     def _type_direct(self, text: str) -> bool:
         """Type text directly into target app without Ctrl+V."""
         try:
-            self._focus_target_window()
+            focus_target_window(self.target_window_handle)
             from pynput.keyboard import Controller
+
             keyboard_controller = Controller()
             time.sleep(0.12)
             keyboard_controller.type(text)
@@ -291,8 +282,10 @@ class ParratorTrayApp:
     def _auto_paste(self) -> bool:
         """Automatically paste from clipboard."""
         if auto_paste_from_clipboard(
-            focus_target=self._focus_target_window,
-            paste_via_window_message=self._paste_via_window_message,
+            focus_target=lambda: focus_target_window(self.target_window_handle),
+            paste_via_window_message=lambda: paste_via_window_message(
+                self.target_window_handle, logger=print
+            ),
             window_handle=self.target_window_handle,
             logger=print,
         ):
@@ -302,86 +295,16 @@ class ParratorTrayApp:
         return False
 
     def _paste_via_window_message(self) -> bool:
-        """Paste into target window via WM_PASTE without key simulation."""
-        if sys.platform != "win32" or not self.target_window_handle:
-            return False
-
-        try:
-            user32 = ctypes.windll.user32
-            hwnd = int(self.target_window_handle)
-            target_thread = user32.GetWindowThreadProcessId(hwnd, None)
-            if not target_thread:
-                return False
-
-            class RECT(ctypes.Structure):
-                _fields_ = [
-                    ("left", ctypes.c_long),
-                    ("top", ctypes.c_long),
-                    ("right", ctypes.c_long),
-                    ("bottom", ctypes.c_long),
-                ]
-
-            class GUITHREADINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", ctypes.c_uint),
-                    ("flags", ctypes.c_uint),
-                    ("hwndActive", ctypes.c_void_p),
-                    ("hwndFocus", ctypes.c_void_p),
-                    ("hwndCapture", ctypes.c_void_p),
-                    ("hwndMenuOwner", ctypes.c_void_p),
-                    ("hwndMoveSize", ctypes.c_void_p),
-                    ("hwndCaret", ctypes.c_void_p),
-                    ("rcCaret", RECT),
-                ]
-
-            info = GUITHREADINFO()
-            info.cbSize = ctypes.sizeof(info)
-            if not user32.GetGUIThreadInfo(target_thread, ctypes.byref(info)):
-                return False
-
-            focus_hwnd = int(info.hwndFocus) if info.hwndFocus else hwnd
-            WM_PASTE = 0x0302
-            SMTO_ABORTIFHUNG = 0x0002
-            result = ctypes.c_ulong(0)
-            ok = user32.SendMessageTimeoutW(
-                focus_hwnd,
-                WM_PASTE,
-                0,
-                0,
-                SMTO_ABORTIFHUNG,
-                150,
-                ctypes.byref(result),
-            )
-            return bool(ok)
-        except Exception as e:
-            print(f"WM_PASTE failed: {e}")
-            return False
+        """Paste into target window via WM_PASTE."""
+        return paste_via_window_message(self.target_window_handle, logger=print)
 
     def _get_foreground_window_handle(self) -> Optional[int]:
         """Get current active window handle on Windows."""
-        if sys.platform != "win32":
-            return None
-        try:
-            return ctypes.windll.user32.GetForegroundWindow()
-        except Exception:
-            return None
+        return get_foreground_window_handle()
 
     def _focus_target_window(self):
         """Try to return focus to the window where recording started."""
-        if sys.platform != "win32":
-            return
-        if not self.target_window_handle:
-            return
-
-        try:
-            user32 = ctypes.windll.user32
-            SW_RESTORE = 9
-            if user32.IsIconic(self.target_window_handle):
-                user32.ShowWindow(self.target_window_handle, SW_RESTORE)
-            user32.SetForegroundWindow(self.target_window_handle)
-            time.sleep(0.08)
-        except Exception as e:
-            print(f"Could not focus target window: {e}")
+        focus_target_window(self.target_window_handle)
 
     def _show_runtime_status(self, title: str, message: str, error: bool = False):
         """Show runtime status without delayed OS notifications."""
@@ -442,16 +365,16 @@ class ParratorTrayApp:
 
     def _get_icon_path(self):
         """Get path to tray icon."""
-        if getattr(sys, 'frozen', False):
+        if getattr(sys, "frozen", False):
             base_path = sys._MEIPASS
         else:
             base_path = os.path.dirname(os.path.abspath(__file__))
 
-        return os.path.join(base_path, 'resources', 'icon.png')
+        return os.path.join(base_path, "resources", "icon.png")
 
     def cleanup(self):
         """Clean up resources."""
-        if hasattr(self, 'wave_overlay') and self.wave_overlay:
+        if hasattr(self, "wave_overlay") and self.wave_overlay:
             self.wave_overlay.stop()
         if self.hotkey_manager:
             self.hotkey_manager.stop()

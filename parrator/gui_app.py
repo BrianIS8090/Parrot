@@ -2,23 +2,14 @@
 
 from __future__ import annotations
 
+import ctypes
+import json
 import os
 import sys
 import time
-import json
-import ctypes
 from contextlib import suppress
 from datetime import datetime
 from typing import Dict, Optional
-
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QComboBox, QLineEdit, QStackedWidget,
-    QGroupBox, QTreeWidget, QTreeWidgetItem, QTextEdit, QProgressBar, QMessageBox,
-    QHeaderView, QAbstractItemView
-)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QObject, QTimer, QSize
-from PyQt6.QtGui import QIcon, QFont, QColor, QPainter, QPen, QPixmap
 
 from huggingface_hub import snapshot_download
 
@@ -35,6 +26,34 @@ from .model_presets import (
 from .text_output import auto_paste_from_clipboard, paste_with_type_fallback
 from .transcriber import Transcriber
 from .wave_overlay import WaveOverlayController
+from .win_utils import (
+    focus_target_window,
+    get_foreground_window_handle,
+    paste_via_window_message,
+)
+
+from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QIcon, QPainter, QPixmap
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QStackedWidget,
+    QTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class WorkerSignals(QObject):
@@ -110,10 +129,7 @@ class ParratorGuiApp(QMainWindow):
         return os.path.join(base_path, relative_path)
 
     def _resolve_window_icon_path(self) -> str:
-        icon_candidates = [
-            "resources/icon.ico",
-            "resources/icon.png",
-        ]
+        icon_candidates = ["resources/icon.ico", "resources/icon.png"]
         for relative_path in icon_candidates:
             icon_path = self._resource_path(relative_path)
             if os.path.exists(icon_path):
@@ -141,7 +157,10 @@ class ParratorGuiApp(QMainWindow):
                 DWMSBT_MICA = 2
                 val = ctypes.c_int(DWMSBT_MICA)
                 ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ctypes.byref(val), ctypes.sizeof(val)
+                    hwnd,
+                    DWMWA_SYSTEMBACKDROP_TYPE,
+                    ctypes.byref(val),
+                    ctypes.sizeof(val),
                 )
 
                 # Закругленные углы
@@ -149,20 +168,34 @@ class ParratorGuiApp(QMainWindow):
                 DWMWCP_ROUND = 2
                 corner_val = ctypes.c_int(DWMWCP_ROUND)
                 ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ctypes.byref(corner_val), ctypes.sizeof(corner_val)
+                    hwnd,
+                    DWMWA_WINDOW_CORNER_PREFERENCE,
+                    ctypes.byref(corner_val),
+                    ctypes.sizeof(corner_val),
                 )
 
                 # Тёмная/Светлая тема ОС
                 # DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-                # is_dark = 1 # 1 for dark, 0 for light
-                # ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(ctypes.c_int(is_dark)), ctypes.sizeof(ctypes.c_int))
+                # is_dark = 1  # 1 for dark, 0 for light
+                # ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                #     hwnd, 20,
+                #     ctypes.byref(ctypes.c_int(is_dark)),
+                #     ctypes.sizeof(ctypes.c_int),
+                # )
 
                 # Расширяем рамку
                 class MARGINS(ctypes.Structure):
-                    _fields_ = [("cxLeftWidth", ctypes.c_int), ("cxRightWidth", ctypes.c_int),
-                                ("cyTopHeight", ctypes.c_int), ("cyBottomHeight", ctypes.c_int)]
+                    _fields_ = [
+                        ("cxLeftWidth", ctypes.c_int),
+                        ("cxRightWidth", ctypes.c_int),
+                        ("cyTopHeight", ctypes.c_int),
+                        ("cyBottomHeight", ctypes.c_int),
+                    ]
+
                 margins = MARGINS(-1, -1, -1, -1)
-                ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
+                ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(
+                    hwnd, ctypes.byref(margins)
+                )
             except Exception as e:
                 print(f"Mica effect not applied: {e}")
 
@@ -182,12 +215,7 @@ class ParratorGuiApp(QMainWindow):
         logo.setObjectName("HeaderLogo")
         logo.setFixedSize(28, 28)
         logo_paths = [
-            r"C:\Users\Brian\Downloads\Parrot\assets\lumigen-wprf3azgo.jpg",
-            os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "assets",
-                "lumigen-wprf3azgo.jpg",
-            ),
+            self._resource_path(os.path.join("..", "assets", "lumigen-wprf3azgo.jpg"))
         ]
         for logo_path in logo_paths:
             if os.path.exists(logo_path):
@@ -206,31 +234,34 @@ class ParratorGuiApp(QMainWindow):
 
         title = QLabel("Parrot")
         title.setObjectName("HeaderTitle")
-        
+
         # Получаем версию из pyproject.toml если получится, или используем заглушку
         version = "v0.2.0"
         try:
-            import tomli
-            pyproject_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "pyproject.toml")
-            with open(pyproject_path, "rb") as f:
-                pyproject = tomli.load(f)
-                version = f"v{pyproject['project']['version']}"
+            from importlib.metadata import version as get_version
+
+            version = f"v{get_version('parrator')}"
         except Exception:
-            pass # Fallback to v0.2.0
+            pass
 
         version_label = QLabel(version)
         version_label.setObjectName("VersionLabel")
-        version_label.setStyleSheet("color: #0284c7; font-weight: bold; background: rgba(2, 132, 199, 0.1); border-radius: 4px; padding: 2px 6px; font-size: 8pt;")
-        
+        version_label.setStyleSheet(
+            "color: #0284c7; font-weight: bold; "
+            "background: rgba(2, 132, 199, 0.1); "
+            "border-radius: 4px; padding: 2px 6px; "
+            "font-size: 8pt;"
+        )
+
         title_layout.addWidget(title)
         title_layout.addWidget(version_label)
         title_layout.addStretch()
-        
+
         subtitle = QLabel("Локальная диктовка с быстрым выводом в активное приложение")
         subtitle.setObjectName("HeaderSub")
         header_left.addLayout(title_layout)
         header_left.addWidget(subtitle)
-        
+
         header_right = QVBoxLayout()
         header_right.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.btn_toggle_service = QPushButton("Включить диктовку")
@@ -241,7 +272,9 @@ class ParratorGuiApp(QMainWindow):
         self.lbl_model_status.setObjectName("StatusLabel")
         self.lbl_service_status = QLabel("Сервис: остановлен")
         self.lbl_service_status.setObjectName("StatusLabel")
-        header_right.addWidget(self.btn_toggle_service, alignment=Qt.AlignmentFlag.AlignRight)
+        header_right.addWidget(
+            self.btn_toggle_service, alignment=Qt.AlignmentFlag.AlignRight
+        )
         self.lbl_model_status.hide()
         self.lbl_service_status.hide()
 
@@ -320,10 +353,10 @@ class ParratorGuiApp(QMainWindow):
         # === Footer ===
         footer_layout = QHBoxLayout()
         self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0) # Indeterminate
+        self.progress_bar.setRange(0, 0)  # Indeterminate
         self.progress_bar.setFixedSize(150, 10)
-        self.progress_bar.hide() # Hidden by default
-        
+        self.progress_bar.hide()  # Hidden by default
+
         self.lbl_activity = QLabel("Готово")
         self.lbl_activity.setObjectName("ActivityLabel")
 
@@ -371,7 +404,10 @@ class ParratorGuiApp(QMainWindow):
         row_model_actions.addStretch()
         gm_layout.addLayout(row_model_actions)
 
-        hint = QLabel("Рекомендуется загрузить модель заранее, чтобы запись запускалась без задержек.")
+        hint = QLabel(
+            "Рекомендуется загрузить модель заранее, "
+            "чтобы запись запускалась без задержек."
+        )
         hint.setObjectName("SectionHint")
         gm_layout.addWidget(hint)
         left_layout.addWidget(group_model)
@@ -477,7 +513,7 @@ class ParratorGuiApp(QMainWindow):
         self.btn_dict_add = QPushButton("Добавить")
         self.btn_dict_add.setObjectName("DarkBtn")
         self.btn_dict_add.clicked.connect(self._add_or_update_dictionary_rule)
-        
+
         row_input.addWidget(self.entry_dict_source, stretch=1)
         row_input.addWidget(self.entry_dict_target, stretch=1)
         row_input.addWidget(self.btn_dict_add)
@@ -485,8 +521,12 @@ class ParratorGuiApp(QMainWindow):
 
         self.tree_dict = QTreeWidget()
         self.tree_dict.setHeaderLabels(["Что заменить", "На что заменить"])
-        self.tree_dict.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.tree_dict.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.tree_dict.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.tree_dict.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         self.tree_dict.header().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.tree_dict.itemSelectionChanged.connect(self._on_dictionary_table_select)
         layout.addWidget(self.tree_dict, stretch=1)
@@ -495,11 +535,13 @@ class ParratorGuiApp(QMainWindow):
         self.btn_dict_del = QPushButton("Удалить выбранное")
         self.btn_dict_del.setObjectName("SecondaryBtn")
         self.btn_dict_del.clicked.connect(self._delete_selected_dictionary_rule)
-        
+
         self.btn_dict_save = QPushButton("Сохранить словарь")
         self.btn_dict_save.setObjectName("AccentBtn")
-        self.btn_dict_save.clicked.connect(lambda: self.save_dictionary_settings(show_message=True))
-        
+        self.btn_dict_save.clicked.connect(
+            lambda: self.save_dictionary_settings(show_message=True)
+        )
+
         row_actions.addWidget(self.btn_dict_del)
         row_actions.addStretch()
         row_actions.addWidget(self.btn_dict_save)
@@ -518,11 +560,11 @@ class ParratorGuiApp(QMainWindow):
         self.btn_clear_res = QPushButton("Очистить текст")
         self.btn_clear_res.setObjectName("SecondaryBtn")
         self.btn_clear_res.clicked.connect(lambda: self.txt_result.clear())
-        
+
         lay_res_btn = QHBoxLayout()
         lay_res_btn.addStretch()
         lay_res_btn.addWidget(self.btn_clear_res)
-        
+
         lay_res.addWidget(self.txt_result)
         lay_res.addLayout(lay_res_btn)
         layout.addWidget(grp_result, stretch=1)
@@ -535,11 +577,11 @@ class ParratorGuiApp(QMainWindow):
         self.btn_clear_log = QPushButton("Очистить логи")
         self.btn_clear_log.setObjectName("SecondaryBtn")
         self.btn_clear_log.clicked.connect(lambda: self.txt_log.clear())
-        
+
         lay_log_btn = QHBoxLayout()
         lay_log_btn.addStretch()
         lay_log_btn.addWidget(self.btn_clear_log)
-        
+
         lay_log.addWidget(self.txt_log)
         lay_log.addLayout(lay_log_btn)
         layout.addWidget(grp_log, stretch=1)
@@ -743,7 +785,7 @@ class ParratorGuiApp(QMainWindow):
             current_model = default_model_name
             current_label = MODEL_NAME_TO_LABEL[current_model]
             self.config.set("model_name", current_model)
-        
+
         self.combo_model.setCurrentText(current_label)
 
         # Настройки сервиса
@@ -767,7 +809,7 @@ class ParratorGuiApp(QMainWindow):
         if legacy_path:
             dictionary.update(self._load_dictionary_from_file(legacy_path))
             self.log("Словарь из файла перенесен в визуальные правила")
-        
+
         self.tree_dict.clear()
         for src, tgt in dictionary.items():
             item = QTreeWidgetItem([src, tgt])
@@ -908,7 +950,9 @@ class ParratorGuiApp(QMainWindow):
         compact = " ".join(text.split())
         if len(compact) > 64:
             compact = f"{compact[:61]}..."
-        self.lbl_live_last.setText(f"• Последняя фраза: «{compact}»" if compact else "• Последняя фраза: —")
+        self.lbl_live_last.setText(
+            f"• Последняя фраза: «{compact}»" if compact else "• Последняя фраза: —"
+        )
 
     @pyqtSlot()
     def _update_controls_ui(self):
@@ -956,7 +1000,8 @@ class ParratorGuiApp(QMainWindow):
 
     def _icon_from_svg(self, svg_content: str, size: int = 24) -> QIcon:
         from PyQt6.QtSvg import QSvgRenderer
-        renderer = QSvgRenderer(svg_content.encode('utf-8'))
+
+        renderer = QSvgRenderer(svg_content.encode("utf-8"))
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pixmap)
@@ -966,11 +1011,28 @@ class ParratorGuiApp(QMainWindow):
         return QIcon(pixmap)
 
     def _build_mic_icon(self) -> QIcon:
-        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>'
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'width="24" height="24" viewBox="0 0 24 24" '
+            'fill="none" stroke="#FFFFFF" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5'
+            'a3 3 0 0 0-3-3Z"/>'
+            '<path d="M19 10v2a7 7 0 0 1-14 0v-2"/>'
+            '<line x1="12" x2="12" y1="19" y2="22"/>'
+            "</svg>"
+        )
         return self._icon_from_svg(svg)
 
     def _build_stop_icon(self) -> QIcon:
-        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>'
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'width="24" height="24" viewBox="0 0 24 24" '
+            'fill="none" stroke="#FFFFFF" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<rect width="18" height="18" x="3" y="3" '
+            'rx="2"/></svg>'
+        )
         return self._icon_from_svg(svg)
 
     def _refresh_toggle_button(self):
@@ -992,9 +1054,11 @@ class ParratorGuiApp(QMainWindow):
                 os.startfile(path)
             elif sys.platform == "darwin":
                 import subprocess
+
                 subprocess.run(["open", path], check=False)
             else:
                 import subprocess
+
                 subprocess.run(["xdg-open", path], check=False)
             self.log(f"Открыт файл конфигурации: {path}")
         except Exception as e:
@@ -1021,7 +1085,9 @@ class ParratorGuiApp(QMainWindow):
 
     def save_runtime_settings(self):
         self.config.set("hotkey", self.entry_hotkey.text().strip() or "ctrl+shift+;")
-        self.config.set("output_mode", self.combo_output.currentText().strip() or "paste")
+        self.config.set(
+            "output_mode", self.combo_output.currentText().strip() or "paste"
+        )
         self.config.set("auto_paste", self.combo_autopaste.currentText() == "Включена")
         if not self.save_dictionary_settings(show_message=False):
             self.log("Настройки словаря не сохранены")
@@ -1034,9 +1100,9 @@ class ParratorGuiApp(QMainWindow):
         model_name = MODEL_LABEL_TO_NAME.get(label)
         if not model_name:
             return
-            
+
         self.signals.model_status_changed.emit("Статус модели: проверка...")
-        
+
         def worker():
             preset = MODEL_PRESETS.get(model_name)
             if not preset:
@@ -1050,13 +1116,16 @@ class ParratorGuiApp(QMainWindow):
                 self.signals.model_status_changed.emit("Статус модели: не скачана")
 
         try:
-            if hasattr(self, '_check_thread') and self._check_thread is not None:
-                if self._check_thread.isRunning():
-                    self._check_thread.quit()
-                    self._check_thread.wait()
+            if (
+                hasattr(self, "_check_thread")
+                and self._check_thread is not None
+                and self._check_thread.isRunning()
+            ):
+                self._check_thread.quit()
+                self._check_thread.wait()
         except RuntimeError:
-            pass # The thread C++ object has been deleted
-            
+            pass
+
         self._check_thread = BackgroundWorker(worker)
         self._check_thread.finished.connect(self._check_thread.deleteLater)
         self._check_thread.start()
@@ -1075,7 +1144,9 @@ class ParratorGuiApp(QMainWindow):
         def worker():
             ok = self.transcriber.load_model()
             if ok:
-                self.signals.model_status_changed.emit("Статус модели: загружена и готова")
+                self.signals.model_status_changed.emit(
+                    "Статус модели: загружена и готова"
+                )
                 self.signals.log_msg.emit("Модель готова к работе")
             else:
                 self.signals.model_status_changed.emit("Статус модели: ошибка загрузки")
@@ -1086,9 +1157,9 @@ class ParratorGuiApp(QMainWindow):
                     self.signals.log_msg.emit("Ошибка загрузки модели")
             if auto_start:
                 self.signals.model_loaded_result.emit(ok)
-                
+
             self.signals.busy_changed.emit(False, "Готово")
-            
+
         # Store ref to prevent GC
         self._load_thread = BackgroundWorker(worker)
         self._load_thread.finished.connect(self._on_model_load_thread_finished)
@@ -1096,7 +1167,7 @@ class ParratorGuiApp(QMainWindow):
 
     def _on_model_load_thread_finished(self):
         self.model_loading = False
-        self.model_loaded = True
+        self.model_loaded = self.transcriber.model is not None
         self.signals.controls_update.emit()
 
     def start_service(self):
@@ -1139,9 +1210,13 @@ class ParratorGuiApp(QMainWindow):
 
         self.service_running = True
         if self.hotkey_manager.is_hold_mode:
-            self.signals.service_status_changed.emit(f"Сервис: запущен (удерживайте {hotkey})")
+            self.signals.service_status_changed.emit(
+                f"Сервис: запущен (удерживайте {hotkey})"
+            )
         else:
-            self.signals.service_status_changed.emit(f"Сервис: запущен (toggle: {hotkey})")
+            self.signals.service_status_changed.emit(
+                f"Сервис: запущен (toggle: {hotkey})"
+            )
         self.log("Сервис диктовки запущен")
         self.signals.controls_update.emit()
 
@@ -1170,7 +1245,11 @@ class ParratorGuiApp(QMainWindow):
             QTimer.singleShot(0, self._start_recording)
 
     def _on_hotkey_release(self):
-        if self.hotkey_manager and self.hotkey_manager.is_hold_mode and self.is_recording:
+        if (
+            self.hotkey_manager
+            and self.hotkey_manager.is_hold_mode
+            and self.is_recording
+        ):
             QTimer.singleShot(0, self._stop_recording)
 
     def _start_recording(self):
@@ -1179,7 +1258,7 @@ class ParratorGuiApp(QMainWindow):
         self.signals.service_status_changed.emit("Сервис: запись...")
         self.signals.busy_changed.emit(True, "Запись голоса...")
         self.log("Запись началась")
-        
+
         self.wave_overlay.show()
 
         if not self.audio_recorder.start_recording():
@@ -1197,7 +1276,7 @@ class ParratorGuiApp(QMainWindow):
         self.signals.service_status_changed.emit("Сервис: распознавание...")
         self.signals.busy_changed.emit(True, "Распознавание аудио...")
         self.log("Запись остановлена, распознавание...")
-        
+
         self.wave_overlay.hide()
 
         audio_data = self.audio_recorder.stop_recording()
@@ -1235,7 +1314,7 @@ class ParratorGuiApp(QMainWindow):
             else:
                 self.signals.service_status_changed.emit("Сервис: остановлен")
             self.signals.busy_changed.emit(False, "Готово")
-            
+
             if temp_path and os.path.exists(temp_path):
                 with suppress(Exception):
                     os.remove(temp_path)
@@ -1250,23 +1329,26 @@ class ParratorGuiApp(QMainWindow):
 
         try:
             import pyperclip
+
             pyperclip.copy(text)
             self.signals.log_msg.emit("Текст скопирован в буфер")
-            if bool(self.config.get("auto_paste", True)):
-                if not paste_with_type_fallback(
-                    text,
-                    paste_text=self._auto_paste,
-                    type_text=self._type_direct,
-                    logger=self.signals.log_msg.emit,
-                ):
-                    self.signals.log_msg.emit("Не удалось вставить текст в окно")
+            if bool(
+                self.config.get("auto_paste", True)
+            ) and not paste_with_type_fallback(
+                text,
+                paste_text=self._auto_paste,
+                type_text=self._type_direct,
+                logger=self.signals.log_msg.emit,
+            ):
+                self.signals.log_msg.emit("Не удалось вставить текст в окно")
         except Exception as e:
             self.signals.log_msg.emit(f"Ошибка буфера обмена: {e}")
 
     def _type_direct(self, text: str) -> bool:
-        self._focus_target_window()
+        focus_target_window(self.target_window_handle)
         try:
             from pynput.keyboard import Controller
+
             controller = Controller()
             time.sleep(0.12)
             controller.type(text)
@@ -1277,8 +1359,10 @@ class ParratorGuiApp(QMainWindow):
 
     def _auto_paste(self) -> bool:
         if auto_paste_from_clipboard(
-            focus_target=self._focus_target_window,
-            paste_via_window_message=self._paste_via_window_message,
+            focus_target=lambda: focus_target_window(self.target_window_handle),
+            paste_via_window_message=lambda: paste_via_window_message(
+                self.target_window_handle, logger=self.signals.log_msg.emit
+            ),
             window_handle=self.target_window_handle,
             logger=self.signals.log_msg.emit,
         ):
@@ -1288,78 +1372,15 @@ class ParratorGuiApp(QMainWindow):
         return False
 
     def _paste_via_window_message(self) -> bool:
-        if os.name != "nt" or not self.target_window_handle:
-            return False
-        try:
-            user32 = ctypes.windll.user32
-            hwnd = int(self.target_window_handle)
-            target_thread = user32.GetWindowThreadProcessId(hwnd, None)
-            if not target_thread:
-                return False
-
-            class RECT(ctypes.Structure):
-                _fields_ = [
-                    ("left", ctypes.c_long),
-                    ("top", ctypes.c_long),
-                    ("right", ctypes.c_long),
-                    ("bottom", ctypes.c_long),
-                ]
-
-            class GUITHREADINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", ctypes.c_uint),
-                    ("flags", ctypes.c_uint),
-                    ("hwndActive", ctypes.c_void_p),
-                    ("hwndFocus", ctypes.c_void_p),
-                    ("hwndCapture", ctypes.c_void_p),
-                    ("hwndMenuOwner", ctypes.c_void_p),
-                    ("hwndMoveSize", ctypes.c_void_p),
-                    ("hwndCaret", ctypes.c_void_p),
-                    ("rcCaret", RECT),
-                ]
-
-            info = GUITHREADINFO()
-            info.cbSize = ctypes.sizeof(info)
-            if not user32.GetGUIThreadInfo(target_thread, ctypes.byref(info)):
-                return False
-
-            focus_hwnd = int(info.hwndFocus) if info.hwndFocus else hwnd
-            WM_PASTE = 0x0302
-            SMTO_ABORTIFHUNG = 0x0002
-            result = ctypes.c_ulong(0)
-            ok = user32.SendMessageTimeoutW(
-                focus_hwnd,
-                WM_PASTE,
-                0,
-                0,
-                SMTO_ABORTIFHUNG,
-                150,
-                ctypes.byref(result),
-            )
-            return bool(ok)
-        except Exception as e:
-            self.signals.log_msg.emit(f"WM_PASTE не сработал: {e}")
-            return False
+        return paste_via_window_message(
+            self.target_window_handle, logger=self.signals.log_msg.emit
+        )
 
     def _get_foreground_window_handle(self) -> Optional[int]:
-        if os.name != "nt":
-            return None
-        try:
-            return ctypes.windll.user32.GetForegroundWindow()
-        except Exception:
-            return None
+        return get_foreground_window_handle()
 
     def _focus_target_window(self):
-        if os.name != "nt" or not self.target_window_handle:
-            return
-        try:
-            user32 = ctypes.windll.user32
-            if user32.IsIconic(self.target_window_handle):
-                user32.ShowWindow(self.target_window_handle, 9)
-            user32.SetForegroundWindow(self.target_window_handle)
-            time.sleep(0.08)
-        except Exception as e:
-            self.signals.log_msg.emit(f"Не удалось вернуть фокус: {e}")
+        focus_target_window(self.target_window_handle)
 
     def closeEvent(self, event):
         self.wave_overlay.stop()
@@ -1372,13 +1393,13 @@ class ParratorGuiApp(QMainWindow):
         app = QApplication.instance()
         if not app:
             app = QApplication(sys.argv)
-            
+
         # Apply Windows Vista theme if available to look native
         if sys.platform == "win32":
             app.setStyle("windowsvista")
-            
+
         self.show()
-        
+
         # If run was called directly, we might need to exec if not already running
         # Assuming the caller will call exec() or we call it here.
         # In __main__.py: app.run() is called.

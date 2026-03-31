@@ -18,7 +18,6 @@ dependencies = [
     "pyperclip (>=1.9.0,<2.0.0)",
     "keyboard (>=0.13.5,<0.14.0)",
     "webrtcvad-wheels (>=2.0.14,<3.0.0)",
-    "loguru (>=0.7.3,<0.8.0)",
     "pyautogui (>=0.9.54,<1.0.0)",
     "pystray (>=0.19.5,<0.20.0)",
     "pynput (>=1.8.1,<2.0.0)",
@@ -74,6 +73,11 @@ select = [
     "A",  # flake8-builtins (shadowing builtins)
     "SIM",# flake8-simplify
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# onnxruntime должен загружаться до PyQt6 (DLL conflict),
+# поэтому относительные импорты стоят до сторонних
+"parrator/gui_app.py" = ["I001"]
 
 [tool.ruff.format]
 quote-style = "double"
