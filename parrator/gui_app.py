@@ -11,6 +11,29 @@ from contextlib import suppress
 from datetime import datetime
 from typing import Dict, Optional
 
+from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QIcon, QPainter, QPixmap
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QStackedWidget,
+    QTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
 from huggingface_hub import snapshot_download
 
 from .audio_recorder import AudioRecorder
@@ -443,6 +466,13 @@ class ParratorGuiApp(QMainWindow):
         self.combo_autopaste.addItems(["Включена", "Выключена"])
         gs_layout.addWidget(self.combo_autopaste)
 
+        lbl_mic = QLabel("Микрофон")
+        lbl_mic.setObjectName("FieldLabel")
+        gs_layout.addWidget(lbl_mic)
+        self.combo_mic = QComboBox()
+        self._populate_mic_devices()
+        gs_layout.addWidget(self.combo_mic)
+
         row_runtime_actions = QHBoxLayout()
         self.btn_save_runtime = QPushButton("Сохранить настройки")
         self.btn_save_runtime.setObjectName("SecondaryBtn")
@@ -776,6 +806,17 @@ class ParratorGuiApp(QMainWindow):
         self.central_widget.setObjectName("CentralWidget")
         self.setStyleSheet(qss)
 
+    def _populate_mic_devices(self):
+        """Заполняет выпадающий список доступных микрофонов."""
+        self.combo_mic.clear()
+        self.combo_mic.addItem("По умолчанию")
+        try:
+            devices = AudioRecorder.list_input_devices()
+            for dev in devices:
+                self.combo_mic.addItem(dev["name"])
+        except Exception as e:
+            self.log(f"Не удалось получить список микрофонов: {e}")
+
     def _init_data(self):
         # Модель
         default_model_name = MODEL_ORDER[0]
@@ -797,6 +838,13 @@ class ParratorGuiApp(QMainWindow):
         self.combo_autopaste.setCurrentText(
             "Включена" if bool(self.config.get("auto_paste", True)) else "Выключена"
         )
+
+        saved_mic = str(self.config.get("audio_device", ""))
+        if saved_mic:
+            idx = self.combo_mic.findText(saved_mic)
+            if idx >= 0:
+                self.combo_mic.setCurrentIndex(idx)
+
         self._update_output_mode_ui()
 
         self._init_dictionary_settings()
@@ -964,6 +1012,7 @@ class ParratorGuiApp(QMainWindow):
         self.combo_output.setEnabled(not runtime_locked)
         self.btn_save_runtime.setEnabled(not runtime_locked)
         self.btn_open_config.setEnabled(not runtime_locked)
+        self.combo_mic.setEnabled(not runtime_locked)
         self._update_output_mode_ui()
         self._refresh_toggle_button()
 
@@ -1089,6 +1138,8 @@ class ParratorGuiApp(QMainWindow):
             "output_mode", self.combo_output.currentText().strip() or "paste"
         )
         self.config.set("auto_paste", self.combo_autopaste.currentText() == "Включена")
+        mic_text = self.combo_mic.currentText()
+        self.config.set("audio_device", "" if mic_text == "По умолчанию" else mic_text)
         if not self.save_dictionary_settings(show_message=False):
             self.log("Настройки словаря не сохранены")
             return False

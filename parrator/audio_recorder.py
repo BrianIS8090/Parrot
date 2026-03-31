@@ -24,17 +24,38 @@ class AudioRecorder:
         self.stream: Optional[sd.InputStream] = None
         self.lock = threading.Lock()
 
+    @staticmethod
+    def list_input_devices() -> list:
+        """Возвращает список уникальных устройств ввода (микрофонов)."""
+        devices = sd.query_devices()
+        seen = set()
+        result = []
+        for i, dev in enumerate(devices):
+            if dev["max_input_channels"] > 0 and dev["name"] not in seen:
+                seen.add(dev["name"])
+                result.append({"index": i, "name": dev["name"]})
+        return result
+
     def start_recording(self) -> bool:
         """Start recording audio."""
         try:
             with self.lock:
                 self.recorded_frames.clear()
 
+                device_name = self.config.get("audio_device", "")
+                device = None
+                if device_name:
+                    for dev in self.list_input_devices():
+                        if dev["name"] == device_name:
+                            device = dev["index"]
+                            break
+
                 self.stream = sd.InputStream(
                     samplerate=self.sample_rate,
                     channels=self.channels,
                     callback=self._audio_callback,
                     dtype="float32",
+                    device=device,
                 )
 
                 self.stream.start()
