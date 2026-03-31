@@ -3,8 +3,8 @@ Cross-platform startup integration.
 """
 
 import os
-import sys
 import platform
+import sys
 
 
 class StartupManager:
@@ -43,36 +43,41 @@ class StartupManager:
 
     def _get_executable_path(self) -> str:
         """Get path to current executable."""
-        if getattr(sys, 'frozen', False):
+        if getattr(sys, "frozen", False):
             return sys.executable
         else:
-            return sys.executable + ' ' + os.path.abspath(__file__)
+            return sys.executable + " " + os.path.abspath(__file__)
 
     # Windows implementation
     def _is_windows_startup_enabled(self) -> bool:
         try:
             import winreg
+
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
                 r"Software\Microsoft\Windows\CurrentVersion\Run",
-                0, winreg.KEY_READ
+                0,
+                winreg.KEY_READ,
             )
             winreg.QueryValueEx(key, self.app_name)
             winreg.CloseKey(key)
             return True
-        except:
+        except Exception:
             return False
 
     def _enable_windows_startup(self) -> bool:
         try:
             import winreg
+
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
                 r"Software\Microsoft\Windows\CurrentVersion\Run",
-                0, winreg.KEY_SET_VALUE
+                0,
+                winreg.KEY_SET_VALUE,
             )
-            winreg.SetValueEx(key, self.app_name, 0, winreg.REG_SZ,
-                              self._get_executable_path())
+            winreg.SetValueEx(
+                key, self.app_name, 0, winreg.REG_SZ, self._get_executable_path()
+            )
             winreg.CloseKey(key)
             return True
         except Exception as e:
@@ -82,15 +87,17 @@ class StartupManager:
     def _disable_windows_startup(self) -> bool:
         try:
             import winreg
+
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
                 r"Software\Microsoft\Windows\CurrentVersion\Run",
-                0, winreg.KEY_SET_VALUE
+                0,
+                winreg.KEY_SET_VALUE,
             )
             winreg.DeleteValue(key, self.app_name)
             winreg.CloseKey(key)
             return True
-        except:
+        except Exception:
             return False
 
     # macOS implementation
@@ -117,7 +124,7 @@ class StartupManager:
 </plist>"""
 
             os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-            with open(plist_path, 'w') as f:
+            with open(plist_path, "w") as f:
                 f.write(plist_content)
             return True
         except Exception as e:
@@ -130,13 +137,11 @@ class StartupManager:
             if os.path.exists(plist_path):
                 os.remove(plist_path)
             return True
-        except:
+        except Exception:
             return False
 
     def _get_macos_plist_path(self) -> str:
-        return os.path.expanduser(
-            "~/Library/LaunchAgents/com.parrator.app.plist"
-        )
+        return os.path.expanduser("~/Library/LaunchAgents/com.parrator.app.plist")
 
     # Linux implementation
     def _is_linux_startup_enabled(self) -> bool:
@@ -156,7 +161,7 @@ X-GNOME-Autostart-enabled=true
 """
 
             os.makedirs(os.path.dirname(desktop_path), exist_ok=True)
-            with open(desktop_path, 'w') as f:
+            with open(desktop_path, "w") as f:
                 f.write(desktop_content)
             return True
         except Exception as e:
@@ -169,7 +174,7 @@ X-GNOME-Autostart-enabled=true
             if os.path.exists(desktop_path):
                 os.remove(desktop_path)
             return True
-        except:
+        except Exception:
             return False
 
     def _get_linux_desktop_path(self) -> str:

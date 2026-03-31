@@ -3,6 +3,7 @@ Global hotkey management using pynput.
 """
 
 from typing import Callable, Optional
+
 from pynput import keyboard
 
 

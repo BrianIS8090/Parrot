@@ -3,8 +3,8 @@
 Parrator Tray - Simple Speech-to-Text System Tray Application
 """
 
-import sys
 import signal
+import sys
 
 
 class _NullStream:
@@ -50,8 +50,8 @@ def main():
   _ensure_std_streams()
   _set_windows_app_id()
 
-  from parrator.tray_app import ParratorTrayApp
   from parrator.gui_app import ParratorGuiApp
+  from parrator.tray_app import ParratorTrayApp
 
   # Обработка сигналов для корректного завершения
   signal.signal(signal.SIGINT, signal_handler)

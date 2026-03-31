@@ -3,7 +3,6 @@ Cross-platform system notifications.
 """
 
 import platform
-from typing import Optional
 
 
 class NotificationManager:
@@ -30,6 +29,7 @@ class NotificationManager:
         """Show Windows notification."""
         try:
             import win10toast
+
             toaster = win10toast.ToastNotifier()
             toaster.show_toast(title, message, duration=3)
         except ImportError:
@@ -40,27 +40,26 @@ class NotificationManager:
         """Show macOS notification."""
         try:
             import subprocess
+
             script = f'display notification "{message}" with title "{title}"'
-            subprocess.run(['osascript', '-e', script], check=True)
-        except:
+            subprocess.run(["osascript", "-e", script], check=True)
+        except Exception:
             self._show_plyer_notification(title, message)
 
     def _show_linux_notification(self, title: str, message: str):
         """Show Linux notification."""
         try:
             import subprocess
-            subprocess.run(['notify-send', title, message], check=True)
-        except:
+
+            subprocess.run(["notify-send", title, message], check=True)
+        except Exception:
             self._show_plyer_notification(title, message)
 
     def _show_plyer_notification(self, title: str, message: str):
         """Fallback notification using plyer."""
         try:
             from plyer import notification
-            notification.notify(
-                title=title,
-                message=message,
-                timeout=3
-            )
+
+            notification.notify(title=title, message=message, timeout=3)
         except ImportError:
             print(f"NOTIFICATION: {title} - {message}")
