@@ -19,6 +19,7 @@ from .config import Config
 from .hotkey_manager import HotkeyManager
 from .notifications import NotificationManager
 from .startup import StartupManager
+from .text_output import auto_paste_from_clipboard, paste_with_type_fallback
 from .transcriber import Transcriber
 from .wave_overlay import WaveOverlayController
 
@@ -263,16 +264,21 @@ class ParratorTrayApp:
 
             # Auto-paste if enabled
             if self.config.get('auto_paste', True):
-                self._auto_paste()
+                if not paste_with_type_fallback(
+                    text,
+                    paste_text=self._auto_paste,
+                    type_text=self._type_direct,
+                    logger=print,
+                ):
+                    print("Could not insert text into target window")
 
         except Exception as e:
             print(f"Clipboard error: {e}")
 
     def _type_direct(self, text: str) -> bool:
         """Type text directly into target app without Ctrl+V."""
-        self._focus_target_window()
-
         try:
+            self._focus_target_window()
             from pynput.keyboard import Controller
             keyboard_controller = Controller()
             time.sleep(0.12)
@@ -282,33 +288,18 @@ class ParratorTrayApp:
             print(f"Direct typing failed: {e}")
             return False
 
-    def _auto_paste(self):
+    def _auto_paste(self) -> bool:
         """Automatically paste from clipboard."""
-        self._focus_target_window()
-        time.sleep(0.12)
-
-        try:
-            import pyautogui
-            pyautogui.hotkey('ctrl', 'v')
+        if auto_paste_from_clipboard(
+            focus_target=self._focus_target_window,
+            paste_via_window_message=self._paste_via_window_message,
+            window_handle=self.target_window_handle,
+            logger=print,
+        ):
             print("Auto-pasted")
-            return
-        except Exception as e:
-            print(f"Auto-paste via pyautogui failed: {e}")
+            return True
 
-        try:
-            import keyboard
-            time.sleep(0.12)
-            keyboard.send("ctrl+v")
-            print("Auto-pasted")
-            return
-        except Exception as e:
-            print(f"Auto-paste via keyboard failed: {e}")
-
-        if self._paste_via_window_message():
-            print("Auto-pasted")
-            return
-
-        print("Auto-paste did not work")
+        return False
 
     def _paste_via_window_message(self) -> bool:
         """Paste into target window via WM_PASTE without key simulation."""

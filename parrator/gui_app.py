@@ -32,6 +32,7 @@ from .model_presets import (
     MODEL_ORDER,
     MODEL_PRESETS,
 )
+from .text_output import auto_paste_from_clipboard, paste_with_type_fallback
 from .transcriber import Transcriber
 from .wave_overlay import WaveOverlayController
 
@@ -1252,7 +1253,13 @@ class ParratorGuiApp(QMainWindow):
             pyperclip.copy(text)
             self.signals.log_msg.emit("Текст скопирован в буфер")
             if bool(self.config.get("auto_paste", True)):
-                self._auto_paste()
+                if not paste_with_type_fallback(
+                    text,
+                    paste_text=self._auto_paste,
+                    type_text=self._type_direct,
+                    logger=self.signals.log_msg.emit,
+                ):
+                    self.signals.log_msg.emit("Не удалось вставить текст в окно")
         except Exception as e:
             self.signals.log_msg.emit(f"Ошибка буфера обмена: {e}")
 
@@ -1268,32 +1275,17 @@ class ParratorGuiApp(QMainWindow):
             self.signals.log_msg.emit(f"Ошибка прямого ввода: {e}")
             return False
 
-    def _auto_paste(self):
-        self._focus_target_window()
-        time.sleep(0.12)
-
-        try:
-            import pyautogui
-            pyautogui.hotkey("ctrl", "v")
+    def _auto_paste(self) -> bool:
+        if auto_paste_from_clipboard(
+            focus_target=self._focus_target_window,
+            paste_via_window_message=self._paste_via_window_message,
+            window_handle=self.target_window_handle,
+            logger=self.signals.log_msg.emit,
+        ):
             self.signals.log_msg.emit("Текст вставлен")
-            return
-        except Exception as e:
-            self.signals.log_msg.emit(f"Вставка через pyautogui не сработала: {e}")
+            return True
 
-        try:
-            import keyboard
-            time.sleep(0.12)
-            keyboard.send("ctrl+v")
-            self.signals.log_msg.emit("Текст вставлен")
-            return
-        except Exception as e:
-            self.signals.log_msg.emit(f"Вставка через keyboard не сработала: {e}")
-
-        if self._paste_via_window_message():
-            self.signals.log_msg.emit("Текст вставлен")
-            return
-
-        self.signals.log_msg.emit("Автовставка не сработала")
+        return False
 
     def _paste_via_window_message(self) -> bool:
         if os.name != "nt" or not self.target_window_handle:
