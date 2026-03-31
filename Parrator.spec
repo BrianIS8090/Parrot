@@ -1,33 +1,49 @@
 # -*- mode: python; coding: utf-8 -*-
 import sys
 from PyInstaller.utils.hooks import (
-        collect_dynamic_libs,
-        collect_data_files,
+    collect_dynamic_libs,
+    collect_data_files,
+    collect_submodules,
 )
 
 block_cipher = None
 
-# Data files: (source, destination_folder)
 datas = [
-    ('vocab.txt', '.'),
-    ('decoder_joint-model.onnx', '.'),
-    ('encoder-model.onnx', '.'),
     ('parrator/resources/icon.png', 'resources'),
     ('parrator/resources/icon.ico', 'resources'),
+    ('parrator/resources/header_icon.jpg', 'resources'),
 ] + collect_data_files('onnx_asr')
 
-# Binaries: dynamic libs from onnxruntime
 binaries = collect_dynamic_libs('onnxruntime')
+
+hiddenimports = [
+    'onnxruntime.capi._pybind_state',
+    'parrator',
+    'parrator.__main__',
+    'parrator.config',
+    'parrator.gui_app',
+    'parrator.tray_app',
+    'parrator.audio_recorder',
+    'parrator.transcriber',
+    'parrator.hotkey_manager',
+    'parrator.notifications',
+    'parrator.startup',
+    'parrator.wave_overlay',
+    'parrator.text_postprocessor',
+    'parrator.text_output',
+    'parrator.win_utils',
+    'parrator.model_presets',
+] + collect_submodules('onnx_asr')
 
 a = Analysis(
     ['parrator/__main__.py'],
     pathex=['.'],
     binaries=binaries,
     datas=datas,
-    hiddenimports=['onnxruntime.capi._pybind_state'],
+    hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=[],
+    excludes=['matplotlib', 'tkinter', 'scipy'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
