@@ -26,12 +26,31 @@ class AudioRecorder:
 
     @staticmethod
     def list_input_devices() -> list:
-        """Возвращает список уникальных устройств ввода (микрофонов)."""
+        """Возвращает список уникальных устройств ввода (микрофонов).
+
+        На Windows каждое устройство дублируется через MME, DirectSound,
+        WASAPI и WDM-KS.  Оставляем только WASAPI (полные имена,
+        низкая задержка).  Если WASAPI нет — отдаём все уникальные.
+        """
         devices = sd.query_devices()
+        hostapis = sd.query_hostapis()
+
+        # Ищем индекс WASAPI host-api
+        wasapi_idx = None
+        for idx, api in enumerate(hostapis):
+            if "WASAPI" in api["name"]:
+                wasapi_idx = idx
+                break
+
         seen = set()
         result = []
         for i, dev in enumerate(devices):
-            if dev["max_input_channels"] > 0 and dev["name"] not in seen:
+            if dev["max_input_channels"] <= 0:
+                continue
+            # Если нашли WASAPI — берём только его устройства
+            if wasapi_idx is not None and dev["hostapi"] != wasapi_idx:
+                continue
+            if dev["name"] not in seen:
                 seen.add(dev["name"])
                 result.append({"index": i, "name": dev["name"]})
         return result
