@@ -7,8 +7,15 @@ import threading
 import time
 from contextlib import suppress
 
-from PyQt6.QtCore import QObject, QPointF, QRectF, Qt, QTimer, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QColor, QPainter, QPen, QRadialGradient, QRegion
+from PyQt6.QtCore import QObject, QRectF, Qt, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import (
+    QColor,
+    QCursor,
+    QLinearGradient,
+    QPainter,
+    QPen,
+    QRegion,
+)
 from PyQt6.QtWidgets import QApplication, QWidget
 
 
@@ -19,6 +26,25 @@ class OverlayControlSignals(QObject):
     quit_requested = pyqtSignal()
 
 
+def get_overlay_screen(widget: QWidget | None = None):
+    cursor_screen = QApplication.screenAt(QCursor.pos())
+    if cursor_screen is not None:
+        return cursor_screen
+
+    if widget is not None:
+        widget_screen = widget.screen()
+        if widget_screen is not None:
+            return widget_screen
+
+    return QApplication.primaryScreen()
+
+
+def build_overlay_mask(width: int, height: int) -> QRegion:
+    safe_width = max(1, int(width))
+    safe_height = max(1, int(height))
+    return QRegion(0, 0, safe_width, safe_height)
+
+
 class VoiceReactiveWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -27,6 +53,7 @@ class VoiceReactiveWidget(QWidget):
         self.setAutoFillBackground(False)
         self._target_level = 0.0
         self._level = 0.0
+        self._peak_level = 0.0
         self._phase = 0.0
 
         self._timer = QTimer(self)
@@ -35,18 +62,28 @@ class VoiceReactiveWidget(QWidget):
         self._timer.start()
 
     def set_voice_level(self, level: float):
-        self._target_level = max(0.0, min(1.0, float(level)))
+        value = max(0.0, min(1.0, float(level)))
+        if value > 0.0:
+            # Поднимаем чувствительность для спокойной речи,
+            # чтобы эквалайзер не выглядел «мёртвым».
+            value = min(1.0, math.pow(value, 0.62) * 1.08)
+        self._target_level = value
+        self._peak_level = max(self._peak_level, value)
 
     def reset(self):
         self._target_level = 0.0
         self._level = 0.0
+        self._peak_level = 0.0
         self.update()
 
     def _tick(self):
-        self._phase += 0.22
-        self._level += (self._target_level - self._level) * 0.25
+        self._phase += 0.2
+        smoothing = 0.34 if self._target_level > self._level else 0.16
+        self._level += (self._target_level - self._level) * smoothing
+        self._peak_level = max(self._level, self._peak_level * 0.92)
         if self._target_level == 0.0 and self._level < 0.001:
             self._level = 0.0
+            self._peak_level = 0.0
         self.update()
 
     def paintEvent(self, _event):
@@ -57,63 +94,89 @@ class VoiceReactiveWidget(QWidget):
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
         painter.setPen(Qt.PenStyle.NoPen)
 
-        width = self.width()
-        height = self.height()
-        side = min(width, height)
-        cx = width / 2.0
-        cy = height / 2.0
-
-        # Внешние кольца с прозрачностью по уровню голоса.
-        ring_base = side * 0.36
-        ring_scale = 1.0 + self._level * 0.55
-        ring_radius_1 = ring_base * ring_scale
-        ring_radius_2 = (ring_base - 6.0) * (1.0 + self._level * 0.42)
-
-        pen_outer = QPen(QColor(56, 189, 248, int(72 + self._level * 110)), 2.0)
-        painter.setPen(pen_outer)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(QPointF(cx, cy), ring_radius_1, ring_radius_1)
-
-        pen_inner = QPen(QColor(14, 165, 233, int(92 + self._level * 130)), 1.5)
-        painter.setPen(pen_inner)
-        painter.drawEllipse(QPointF(cx, cy), ring_radius_2, ring_radius_2)
-
-        # Центральное «ядро».
-        core_radius = side * 0.27 * (0.95 + self._level * 0.28)
-        gradient = QRadialGradient(
-            cx - core_radius * 0.25,
-            cy - core_radius * 0.25,
-            core_radius * 1.4,
+        frame_rect = self.rect().adjusted(1, 1, -1, -1)
+        background_gradient = QLinearGradient(
+            frame_rect.left(),
+            frame_rect.top(),
+            frame_rect.left(),
+            frame_rect.bottom(),
         )
-        gradient.setColorAt(0.0, QColor(125, 211, 252, 235))
-        gradient.setColorAt(0.45, QColor(56, 189, 248, 225))
-        gradient.setColorAt(1.0, QColor(14, 165, 233, 205))
+        background_gradient.setColorAt(0.0, QColor(31, 36, 45, 238))
+        background_gradient.setColorAt(1.0, QColor(10, 13, 18, 230))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(gradient)
-        painter.drawEllipse(QPointF(cx, cy), core_radius, core_radius)
+        painter.setBrush(background_gradient)
+        painter.drawRect(frame_rect)
 
-        # Полоски эквалайзера, реагирующие на голос.
-        bars = 5
-        bar_width = side * 0.062
-        bar_gap = side * 0.026
-        total_width = bars * bar_width + (bars - 1) * bar_gap
-        start_x = cx - total_width / 2.0
-        bar_base_y = cy + side * 0.12
+        border_gradient = QLinearGradient(
+            frame_rect.left(),
+            frame_rect.top(),
+            frame_rect.right(),
+            frame_rect.bottom(),
+        )
+        border_gradient.setColorAt(0.0, QColor(125, 211, 252, 90))
+        border_gradient.setColorAt(1.0, QColor(20, 184, 166, 45))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(border_gradient, 1.0))
+        painter.drawRect(frame_rect)
+
+        content_rect = frame_rect.adjusted(16, 12, -16, -12)
+        bars = 12
+        slot_width = content_rect.width() / bars
+        bar_width = max(6.0, slot_width * 0.54)
+        bottom = content_rect.bottom()
+        center = (bars - 1) / 2.0
 
         for index in range(bars):
-            wave_a = math.sin(self._phase + index * 0.9)
-            wave_b = math.sin(self._phase * 0.63 + index * 1.3)
-            wobble = (wave_a + wave_b) * side * 0.015
-            bar_height = side * (0.09 + self._level * 0.33) + index * 0.9 + wobble
-            bar_height = max(side * 0.08, min(side * 0.45, bar_height))
+            distance = abs(index - center) / max(1.0, center)
+            emphasis = 1.0 - distance * 0.38
+            wave_a = math.sin(self._phase * 1.35 + index * 0.62)
+            wave_b = math.sin(self._phase * 0.72 + index * 1.17)
+            wobble = (wave_a * 0.11 + wave_b * 0.07) * (0.4 + self._level * 0.6)
+            bar_ratio = 0.14 + self._level * (0.38 + emphasis * 0.34)
+            bar_ratio += self._peak_level * 0.18 + wobble
+            bar_ratio = max(0.12, min(0.98, bar_ratio))
 
-            alpha = int(90 + self._level * 150)
-            painter.setBrush(QColor(245, 252, 255, alpha))
-            x = start_x + index * (bar_width + bar_gap)
-            y = bar_base_y - bar_height
+            bar_height = content_rect.height() * bar_ratio
+            x = (
+                content_rect.left()
+                + index * slot_width
+                + (slot_width - bar_width) / 2.0
+            )
+            y = bottom - bar_height
             rect = QRectF(x, y, bar_width, bar_height)
-            rounding = bar_width * 0.48
+            rounding = min(bar_width / 2.0, 7.0)
+
+            bar_gradient = QLinearGradient(
+                rect.left(),
+                rect.top(),
+                rect.left(),
+                rect.bottom(),
+            )
+            alpha = int(165 + min(1.0, self._peak_level + 0.15) * 70)
+            bar_gradient.setColorAt(0.0, QColor(103, 232, 249, alpha))
+            bar_gradient.setColorAt(0.55, QColor(45, 212, 191, alpha - 10))
+            bar_gradient.setColorAt(1.0, QColor(15, 118, 110, alpha - 25))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(bar_gradient)
             painter.drawRoundedRect(rect, rounding, rounding)
+
+        glow_rect = QRectF(
+            content_rect.left(),
+            frame_rect.top() + 8,
+            content_rect.width(),
+            10,
+        )
+        glow_gradient = QLinearGradient(
+            glow_rect.left(),
+            glow_rect.top(),
+            glow_rect.right(),
+            glow_rect.top(),
+        )
+        glow_gradient.setColorAt(0.0, QColor(255, 255, 255, 0))
+        glow_gradient.setColorAt(0.5, QColor(255, 255, 255, 28))
+        glow_gradient.setColorAt(1.0, QColor(255, 255, 255, 0))
+        painter.setBrush(glow_gradient)
+        painter.drawRect(glow_rect)
 
 
 class WaveOverlay(VoiceReactiveWidget):
@@ -132,13 +195,14 @@ class WaveOverlay(VoiceReactiveWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setStyleSheet("background: transparent; border: none;")
-        self.resize(104, 104)
-        self._apply_circle_mask()
-        screen = QApplication.primaryScreen().geometry()
-        self.move(screen.width() // 2 - 52, screen.height() - 180)
+        self.resize(216, 80)
+        self._apply_rect_mask()
+        self._position_on_screen()
 
     @pyqtSlot()
     def show_overlay(self):
+        self._apply_rect_mask()
+        self._position_on_screen()
         self.show()
 
     @pyqtSlot()
@@ -153,14 +217,20 @@ class WaveOverlay(VoiceReactiveWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._apply_circle_mask()
+        self._apply_rect_mask()
 
-    def _apply_circle_mask(self):
-        size = min(self.width(), self.height())
-        offset_x = (self.width() - size) // 2
-        offset_y = (self.height() - size) // 2
-        mask = QRegion(offset_x, offset_y, size, size, QRegion.RegionType.Ellipse)
-        self.setMask(mask)
+    def _position_on_screen(self):
+        screen = get_overlay_screen(self)
+        if screen is None:
+            return
+        geometry = screen.availableGeometry()
+        x = geometry.center().x() - self.width() // 2
+        y = geometry.bottom() - self.height() - 56
+        self.move(x, y)
+
+    def _apply_rect_mask(self):
+        self.setMask(build_overlay_mask(self.width(), self.height()))
+
 
 def listen_commands(signals: OverlayControlSignals):
     """Слушаем команды из stdin для показа/скрытия окна."""
@@ -212,7 +282,8 @@ class WaveOverlayController:
 
     def __init__(self):
         self.process = None
-        self._level_emit_interval = 0.04
+        self._level_emit_interval = 0.02
+        self._level_delta_threshold = 0.015
         self._last_level_sent = 0.0
         self._last_level_sent_at = 0.0
 
@@ -252,7 +323,9 @@ class WaveOverlayController:
             return
 
         now = time.monotonic()
-        level_changed = abs(value - self._last_level_sent) >= 0.08
+        level_changed = (
+            abs(value - self._last_level_sent) >= self._level_delta_threshold
+        )
         should_throttle = (
             value > 0
             and not level_changed
