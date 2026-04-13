@@ -83,6 +83,10 @@ select = [
 quote-style = "double"
 skip-magic-trailing-comma = true
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
 [tool.pyright] # basedpyright typically respects the pyright configuration section
 venvPath = "."   # Path to the directory *containing* the venv directory
 venv = ".venv"   # Name of the virtual environment directory

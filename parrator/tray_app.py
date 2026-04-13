@@ -43,6 +43,7 @@ class ParratorTrayApp:
         self.model_loaded = False
         self.target_window_handle: Optional[int] = None
         self.wave_overlay = WaveOverlayController()
+        self.audio_recorder.set_level_callback(self.wave_overlay.set_level)
 
     def start(self):
         """Start the application."""
@@ -374,6 +375,8 @@ class ParratorTrayApp:
 
     def cleanup(self):
         """Clean up resources."""
+        if self.audio_recorder:
+            self.audio_recorder.set_level_callback(None)
         if hasattr(self, "wave_overlay") and self.wave_overlay:
             self.wave_overlay.stop()
         if self.hotkey_manager:

@@ -9,9 +9,6 @@ block_cipher = None
 
 # Data files: (source, destination_folder)
 datas = [
-    ('vocab.txt', '.'),
-    ('decoder_joint-model.onnx', '.'),
-    ('encoder-model.onnx', '.'),
     ('parrator/resources/icon.png', 'resources'),
     ('parrator/resources/icon.ico', 'resources'),
 ] + collect_data_files('onnx_asr')

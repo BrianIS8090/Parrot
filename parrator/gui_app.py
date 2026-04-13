@@ -38,6 +38,7 @@ from huggingface_hub import snapshot_download
 
 from .audio_recorder import AudioRecorder
 from .config import Config
+from .huggingface_runtime import install_download_progress_hook
 from .hotkey_manager import HotkeyManager
 from .model_presets import (
     MODEL_LABELS,
@@ -55,29 +56,6 @@ from .win_utils import (
     paste_via_window_message,
 )
 
-from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QIcon, QPainter, QPixmap
-from PyQt6.QtWidgets import (
-    QAbstractItemView,
-    QApplication,
-    QComboBox,
-    QGroupBox,
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
-    QLineEdit,
-    QMainWindow,
-    QMessageBox,
-    QProgressBar,
-    QPushButton,
-    QStackedWidget,
-    QTextEdit,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
-
 
 class WorkerSignals(QObject):
     log_msg = pyqtSignal(str)
@@ -85,6 +63,7 @@ class WorkerSignals(QObject):
     service_status_changed = pyqtSignal(str)
     busy_changed = pyqtSignal(bool, str)
     result_text = pyqtSignal(str)
+    download_progress = pyqtSignal(int, str)  # процент, описание
     controls_update = pyqtSignal()
     model_loaded_result = pyqtSignal(bool)
 
@@ -119,6 +98,7 @@ class ParratorGuiApp(QMainWindow):
         self.hotkey_manager: Optional[HotkeyManager] = None
         self.wave_overlay = WaveOverlayController()
         self.wave_overlay.start()
+        self.audio_recorder.set_level_callback(self.wave_overlay.set_level)
 
         self.model_loaded = False
         self.service_running = False
@@ -136,6 +116,7 @@ class ParratorGuiApp(QMainWindow):
         self.signals.result_text.connect(self._set_result_text_ui)
         self.signals.controls_update.connect(self._update_controls_ui)
         self.signals.model_loaded_result.connect(self._on_model_loaded_for_start)
+        self.signals.download_progress.connect(self._on_download_progress)
 
         self._init_window()
         self._build_ui()
@@ -975,9 +956,20 @@ class ParratorGuiApp(QMainWindow):
         self.lbl_live_service.setText(f"• Сервис: {service_text}")
         self._update_controls_ui()
 
+    @pyqtSlot(int, str)
+    def _on_download_progress(self, percent: int, description: str):
+        """Обновляет прогресс-бар и лог при скачивании модели."""
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(percent)
+        self.progress_bar.show()
+        self.lbl_activity.setText(f"{description} ({percent}%)")
+        if percent >= 100:
+            self.progress_bar.setRange(0, 0)  # обратно в indeterminate
+
     @pyqtSlot(bool, str)
     def _set_busy_ui(self, is_busy: bool, status_text: str):
         if is_busy:
+            self.progress_bar.setRange(0, 0)
             self.progress_bar.show()
         else:
             self.progress_bar.hide()
@@ -1181,6 +1173,10 @@ class ParratorGuiApp(QMainWindow):
         self._check_thread.finished.connect(self._check_thread.deleteLater)
         self._check_thread.start()
 
+    def _install_download_progress_hook(self):
+        """Подменяет tqdm huggingface-hub на версию с отчётом в GUI."""
+        install_download_progress_hook(self.signals)
+
     def load_model_async(self, auto_start=False):
         if self.model_loading:
             self.log("Загрузка модели уже выполняется")
@@ -1193,6 +1189,10 @@ class ParratorGuiApp(QMainWindow):
         self.log("Запущена загрузка/инициализация модели")
 
         def worker():
+            # Перехватываем tqdm для отображения прогресса скачивания
+            self._install_download_progress_hook()
+
+            self.signals.log_msg.emit("Загрузка модели (скачивание + инициализация)...")
             ok = self.transcriber.load_model()
             if ok:
                 self.signals.model_status_changed.emit(
@@ -1434,6 +1434,7 @@ class ParratorGuiApp(QMainWindow):
         focus_target_window(self.target_window_handle)
 
     def closeEvent(self, event):
+        self.audio_recorder.set_level_callback(None)
         self.wave_overlay.stop()
         self.stop_service()
         self.audio_recorder.cleanup()

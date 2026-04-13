@@ -14,6 +14,7 @@ import soundfile as sf
 from onnx_asr import load_model, load_vad
 
 from .config import Config
+from .huggingface_runtime import install_onnx_asr_download_logging
 from .model_presets import DEFAULT_MODEL_NAME, MODEL_MIN_ONNX_ASR_VERSION
 from .text_postprocessor import TextPostProcessor
 
@@ -71,6 +72,7 @@ class Transcriber:
 
             providers = self._get_providers()
             model_path_resolved = self._resolve_model_path(str(model_name), model_path)
+            install_onnx_asr_download_logging(self._log)
 
             if model_path_resolved:
                 self._log(f"Loading model: {model_name} from {model_path_resolved}")

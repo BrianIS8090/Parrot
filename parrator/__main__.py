@@ -6,6 +6,8 @@ Parrator Tray - Simple Speech-to-Text System Tray Application
 import signal
 import sys
 
+from parrator.huggingface_runtime import prepare_hf_hub_runtime
+
 
 class _NullStream:
   """Тихий поток для запуска через pythonw без консоли."""
@@ -49,6 +51,19 @@ def main():
   """Main entry point."""
   _ensure_std_streams()
   _set_windows_app_id()
+
+  # Субпроцесс оверлея — запускает только Qt-окно волны
+  if "--wave-overlay" in sys.argv:
+    from parrator.wave_overlay import main as wave_main
+    wave_main()
+    return
+
+  # Фикс кеша huggingface ДО любых импортов моделей
+  converted, failed = prepare_hf_hub_runtime()
+  if converted:
+    print(f"HuggingFace cache: заменено симлинков: {converted}")
+  if failed:
+    print(f"HuggingFace cache: не удалось заменить симлинков: {failed}")
 
   from parrator.gui_app import ParratorGuiApp
   from parrator.tray_app import ParratorTrayApp

@@ -4,7 +4,9 @@ Simplified audio recording functionality.
 
 import tempfile
 import threading
-from typing import List, Optional
+import time
+from contextlib import suppress
+from typing import Callable, List, Optional
 
 import numpy as np
 import sounddevice as sd
@@ -23,6 +25,9 @@ class AudioRecorder:
         self.recorded_frames: List[np.ndarray] = []
         self.stream: Optional[sd.InputStream] = None
         self.lock = threading.Lock()
+        self.level_callback: Optional[Callable[[float], None]] = None
+        self.level_emit_interval = 0.04
+        self._last_level_emit = 0.0
 
     @staticmethod
     def list_input_devices() -> list:
@@ -60,6 +65,7 @@ class AudioRecorder:
         try:
             with self.lock:
                 self.recorded_frames.clear()
+                self._last_level_emit = 0.0
 
                 device_name = self.config.get("audio_device", "")
                 device = None
@@ -95,8 +101,10 @@ class AudioRecorder:
 
                 if self.recorded_frames:
                     audio_data = np.concatenate(self.recorded_frames, axis=0)
+                    self._emit_voice_level(0.0)
                     return audio_data
 
+                self._emit_voice_level(0.0)
                 return None
 
         except Exception as e:
@@ -108,8 +116,31 @@ class AudioRecorder:
         if status:
             print(f"Audio callback status: {status}")
 
+        if indata.size > 0:
+            level = float(np.sqrt(np.mean(indata * indata)))
+            # Небольшое усиление для более заметной реакции оверлея.
+            level = max(0.0, min(1.0, level * 6.0))
+            self._emit_voice_level(level)
+
         with self.lock:
             self.recorded_frames.append(indata.copy())
+
+    def set_level_callback(self, callback: Optional[Callable[[float], None]]):
+        """Устанавливает callback уровня громкости в диапазоне 0..1."""
+        self.level_callback = callback
+
+    def _emit_voice_level(self, level: float):
+        callback = self.level_callback
+        if callback is None:
+            return
+
+        now = time.monotonic()
+        if level > 0 and (now - self._last_level_emit) < self.level_emit_interval:
+            return
+
+        self._last_level_emit = now
+        with suppress(Exception):
+            callback(level)
 
     def save_temp_audio(self, audio_data: np.ndarray) -> Optional[str]:
         """Save audio data to temporary file."""
